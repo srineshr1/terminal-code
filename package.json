@@ -1,0 +1,21 @@
+{
+  "name": "vscode-multiplayer",
+  "version": "1.0.0",
+  "description": "Basic VSCode-style CLI text editor",
+  "main": "index.js",
+  "bin": {
+    "vscode-cli": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "start:file": "node index.js package.json",
+    "test": "node -e \"console.log('No automated tests yet')\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "blessed": "^0.1.81"
+  }
+}
