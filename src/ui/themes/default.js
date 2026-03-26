@@ -18,11 +18,14 @@ const theme = {
 
   tabBarBg: [37, 37, 38],
   tabFg: [150, 150, 150],
-  tabBg: [37, 37, 38],
+  tabBg: [46, 46, 46],
   tabActiveBg: [30, 30, 30],
   tabActiveFg: [255, 255, 255],
+  tabActiveBorder: [0, 122, 204],
+  tabModifiedBorder: [232, 96, 96],
   tabCloseFg: [150, 150, 150],
   tabHoverBg: [50, 50, 51],
+  tabHoverFg: [220, 220, 220],
 
   activityBarBg: [48, 48, 48],
   activityBarFg: [150, 150, 150],

@@ -206,29 +206,51 @@ class BlessedRenderer {
   }
 
   _buildTabBar(tabs, activeIndex) {
-    const tabBar = blessed.box({
+    const sidebarWidth = this.state.showExplorer ? 24 : 0;
+    const tabBarTop = 1;
+    const tabBarHeight = 1;
+
+    const tabBarBg = blessed.box({
       parent: this.screen,
-      top: 1,
-      left: 0,
-      width: '100%',
-      height: 1,
+      top: tabBarTop,
+      left: sidebarWidth,
+      width: `100%-${sidebarWidth}`,
+      height: tabBarHeight,
       bg: rgb(theme.tabBarBg),
-      fg: rgb(theme.tabFg),
       tags: false,
     });
 
+    const tabBarContent = blessed.box({
+      parent: tabBarBg,
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: tabBarHeight,
+      scrollable: true,
+      tags: false,
+    });
+
+    if (tabs.length === 0) {
+      tabBarBg.setContent(' No files open');
+    }
+
+    const TAB_GAP = 1;
     let col = 0;
+    
     for (let i = 0; i < tabs.length; i++) {
       const tab = tabs[i];
       const isActive = i === activeIndex;
       const title = tab.title || 'Untitled';
-      const displayTitle = title.length > 20 ? title.substring(0, 19) + '\u2026' : title;
+      const displayTitle = title.length > 14 ? title.substring(0, 13) + '\u2026' : title;
       
-      const tabWidth = displayTitle.length + 4;
+      const leftPadding = 2;
+      const rightPadding = 4;
+      const tabWidth = displayTitle.length + leftPadding + rightPadding;
+      const tabLeft = col + (i > 0 ? TAB_GAP : 0);
       
       const tabBox = blessed.box({
-        parent: tabBar,
-        left: col,
+        parent: tabBarContent,
+        left: tabLeft,
         top: 0,
         width: tabWidth,
         height: 1,
@@ -236,25 +258,27 @@ class BlessedRenderer {
         fg: isActive ? rgb(theme.tabActiveFg) : rgb(theme.tabFg),
         clickable: true,
         tags: false,
-        content: tab.modified ? ` ${displayTitle}\u25CF ` : ` ${displayTitle} `,
+        content: ` ${displayTitle}  `,
+      });
+
+      const closeBtn = blessed.text({
+        parent: tabBarContent,
+        left: tabLeft + tabWidth - 3,
+        top: 0,
+        width: 3,
+        height: 1,
+        content: ' \u00D7 ',
+        bg: isActive ? rgb(theme.tabActiveBg) : rgb(theme.tabBg),
+        fg: isActive ? rgb([200, 200, 200]) : rgb(theme.tabCloseFg),
+        clickable: true,
+        tags: false,
       });
 
       tabBox.on('click', () => {
         this.onClick('tab', i);
       });
 
-      const closeBtn = blessed.text({
-        parent: tabBox,
-        right: 0,
-        top: 0,
-        width: 1,
-        content: '\u00D7',
-        bg: isActive ? rgb(theme.tabActiveBg) : rgb(theme.tabBg),
-        fg: rgb(theme.tabCloseFg),
-        tags: false,
-      });
-
-      closeBtn.on('click', () => {
+      closeBtn.on('click', (e) => {
         this.onClick('tab_close', i);
       });
 
@@ -274,12 +298,27 @@ class BlessedRenderer {
         }
       });
 
-      col += tabWidth;
+      if (isActive) {
+        const activeIndicator = blessed.box({
+          parent: tabBarContent,
+          left: tabLeft,
+          bottom: 0,
+          width: tabWidth,
+          height: 1,
+          bg: rgb(tab.modified && !tab.saved ? theme.tabModifiedBorder || [200, 100, 100] : [0, 122, 204]),
+          content: '',
+          tags: false,
+        });
+        this.widgets[`tab_indicator_${i}`] = activeIndicator;
+      }
+
+      col = tabLeft + tabWidth;
       this.widgets[`tab_${i}`] = tabBox;
       this.widgets[`tabclose_${i}`] = closeBtn;
     }
 
-    this.widgets.tabBar = tabBar;
+    this.widgets.tabBar = tabBarBg;
+    this.widgets.tabBarContent = tabBarContent;
   }
 
   _buildSidebar(fileTree, selectedIndex) {
@@ -287,10 +326,10 @@ class BlessedRenderer {
     
     const sidebar = blessed.box({
       parent: this.screen,
-      top: 2,
+      top: 1,
       left: 0,
       width: sidebarWidth,
-      height: '100%-3',
+      height: '100%-2',
       bg: rgb(theme.sidebarBg),
       fg: rgb(theme.sidebarFg),
       tags: false,
@@ -610,12 +649,26 @@ class BlessedRenderer {
     };
 
     const leftPos = menuPositions[menuId] || 0;
+    const dropdownWidth = 30;
+    const itemContentWidth = 28;
+
+    const sidebarWidth = this.state.showExplorer ? 24 : 0;
+    const backdrop = blessed.box({
+      parent: this.screen,
+      top: 1,
+      left: 0,
+      width: '100%',
+      height: 1,
+      bg: rgb(theme.menuDropdownBg),
+      fg: rgb(theme.menuDropdownFg),
+      tags: false,
+    });
 
     const dropdown = blessed.box({
       parent: this.screen,
       top: 1,
       left: leftPos,
-      width: 28,
+      width: dropdownWidth,
       height: items.length + 2,
       bg: rgb(theme.menuDropdownBg),
       fg: rgb(theme.menuDropdownFg),
@@ -634,9 +687,9 @@ class BlessedRenderer {
         blessed.text({
           parent: dropdown,
           top: row,
-          left: 1,
-          width: 24,
-          content: '─'.repeat(24),
+          left: 0,
+          width: dropdownWidth,
+          content: '─'.repeat(dropdownWidth - 2),
           fg: rgb(theme.menuSeparatorFg),
           bg: rgb(theme.menuDropdownBg),
           tags: false,
@@ -645,12 +698,23 @@ class BlessedRenderer {
         continue;
       }
 
+      const label = item.label;
+      const shortcut = item.shortcut || '';
+      let content;
+      
+      if (shortcut) {
+        const padding = Math.max(1, itemContentWidth - label.length - shortcut.length - 2);
+        content = ` ${label}${' '.repeat(padding)}${shortcut}`;
+      } else {
+        content = ` ${label}`;
+      }
+
       const menuItem = blessed.text({
         parent: dropdown,
         top: row,
-        left: 1,
-        width: 24,
-        content: ` ${item.label}`,
+        left: 0,
+        width: dropdownWidth,
+        content: content,
         bg: rgb(theme.menuDropdownBg),
         fg: rgb(theme.menuDropdownFg),
         hoverBg: rgb(theme.menuDropdownHoverBg),
@@ -671,19 +735,6 @@ class BlessedRenderer {
           this._updateMenuHighlight();
         }
       });
-
-      if (item.shortcut) {
-        blessed.text({
-          parent: dropdown,
-          top: row,
-          right: 2,
-          width: 12,
-          content: item.shortcut,
-          fg: rgb(theme.menuShortcutFg),
-          bg: rgb(theme.menuDropdownBg),
-          tags: false,
-        });
-      }
 
       this.widgets[`menuitem_${i}`] = menuItem;
       row++;
