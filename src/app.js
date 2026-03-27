@@ -247,7 +247,22 @@ class App extends EventEmitter {
         this._render();
         break;
       case 'explorer_open':
-        this._openSelectedFile();
+        this.state.set('selectedFileIndex', data);
+        this.state.set('focus', 'explorer');
+        this._openSelectedFile(data);
+        break;
+      case 'explorer_toggle':
+        this.state.set('selectedFileIndex', data);
+        this.state.set('focus', 'explorer');
+        {
+          const fileTree = this.state.get('fileTree');
+          const selectedFile = fileTree ? fileTree[data] : null;
+          if (selectedFile && selectedFile.isDirectory && this.fileTree) {
+            this.fileTree.toggle(selectedFile.path);
+            this.state.set('fileTree', this.fileTree.getVisibleNodes());
+            this._render();
+          }
+        }
         break;
       case 'menu_action':
         this.state.set('menuOpen', null);
@@ -319,7 +334,7 @@ class App extends EventEmitter {
   /**
    * Execute an action
    */
-  executeAction(action) {
+  executeAction(action, args) {
     const [category, name] = action.split('.');
     
     switch (category) {
@@ -327,7 +342,7 @@ class App extends EventEmitter {
         this._handleFileAction(name);
         break;
       case 'tab':
-        this._handleTabAction(name);
+        this._handleTabAction(name, args);
         break;
       case 'edit':
         this._handleEditAction(name);
@@ -376,15 +391,21 @@ class App extends EventEmitter {
   
   // === TAB ACTIONS ===
   
-  _handleTabAction(name) {
+  _handleTabAction(name, args) {
     switch (name) {
       case 'close':
         this._closeTab(this.activeTabIndex);
         break;
       case 'goto':
-        if (name.args && name.args.index !== undefined) {
-          this.activeTabIndex = name.args.index;
+        if (args && args.index !== undefined) {
+          this.activeTabIndex = args.index;
         }
+        break;
+      case 'next':
+        this.activeTabIndex = (this.activeTabIndex + 1) % this.tabs.length;
+        break;
+      case 'prev':
+        this.activeTabIndex = (this.activeTabIndex - 1 + this.tabs.length) % this.tabs.length;
         break;
     }
   }
@@ -456,12 +477,28 @@ class App extends EventEmitter {
   // === EXPLORER ACTIONS ===
   
   _handleExplorerAction(name) {
+    const fileTree = this.state.get('fileTree');
+    const selectedIndex = this.state.get('selectedFileIndex');
+    const selectedFile = fileTree ? fileTree[selectedIndex] : null;
+    
     switch (name) {
       case 'select':
         this._openSelectedFile();
         break;
       case 'open':
         this._openSelectedFile();
+        break;
+      case 'expand':
+        if (selectedFile && selectedFile.isDirectory && this.fileTree) {
+          this.fileTree.toggle(selectedFile.path);
+          this.state.set('fileTree', this.fileTree.getVisibleNodes());
+        }
+        break;
+      case 'collapse':
+        if (selectedFile && selectedFile.isDirectory && this.fileTree) {
+          this.fileTree.toggle(selectedFile.path);
+          this.state.set('fileTree', this.fileTree.getVisibleNodes());
+        }
         break;
     }
   }
@@ -574,14 +611,15 @@ class App extends EventEmitter {
     this._showMessage('Save As not implemented yet');
   }
   
-  async _openSelectedFile() {
+  async _openSelectedFile(index) {
     const fileTree = this.state.get('fileTree');
-    const selectedIndex = this.state.get('selectedFileIndex');
+    const selectedIndex = index !== undefined ? index : this.state.get('selectedFileIndex');
     const file = fileTree[selectedIndex];
     
     if (!file || file.isDirectory) return;
     
     await this.openFile(file.path);
+    this._render();
   }
   
   // === CLIPBOARD ===

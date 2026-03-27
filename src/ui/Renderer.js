@@ -7,6 +7,7 @@
 
 const Screen = require('./Screen');
 const theme = require('./themes/default');
+const Syntax = require('../editor/Syntax');
 
 // Menu definitions
 const MENUS = {
@@ -65,6 +66,7 @@ class Renderer {
     this.screen = null;
     this.lastWidth = 0;
     this.lastHeight = 0;
+    this.tokenCache = new Map();
   }
   
   /**
@@ -100,6 +102,7 @@ class Renderer {
       menuHoverIndex,
       menuDropdown,
       explorerScrollTop,
+      filePath,
     } = data;
     
     if (!layout) return;
@@ -133,7 +136,7 @@ class Renderer {
     
     // === Render Editor ===
     if (layout.editor && buffer) {
-      this._renderEditor(layout.editor, buffer, focus === 'editor', searchResults, currentMatch);
+      this._renderEditor(layout.editor, buffer, focus === 'editor', searchResults, currentMatch, filePath);
     }
     
     // === Render Status Bar ===
@@ -314,9 +317,32 @@ class Renderer {
   }
   
   /**
+   * Get syntax color for a token type
+   */
+  _getSyntaxColor(tokenType) {
+    const syn = theme.syntax || {};
+    switch (tokenType) {
+      case 'keyword': return syn.keyword || theme.editorFg;
+      case 'string': return syn.string || theme.editorFg;
+      case 'number': return syn.number || theme.editorFg;
+      case 'comment': return syn.comment || theme.editorFg;
+      case 'function': return syn.function || theme.editorFg;
+      case 'type': return syn.type || theme.editorFg;
+      case 'constant': return syn.constant || theme.editorFg;
+      case 'operator': return syn.operator || theme.editorFg;
+      case 'punctuation': return syn.punctuation || theme.editorFg;
+      case 'variable': return syn.variable || theme.editorFg;
+      case 'tag': return syn.tag || theme.editorFg;
+      case 'attribute': return syn.attribute || theme.editorFg;
+      case 'property': return syn.property || theme.editorFg;
+      default: return theme.editorFg;
+    }
+  }
+
+  /**
    * Render the editor area
    */
-  _renderEditor(layout, buffer, focused, searchResults, currentMatch) {
+  _renderEditor(layout, buffer, focused, searchResults, currentMatch, filePath) {
     const { x, y, width, height, gutterWidth } = layout;
     
     // Background
@@ -327,6 +353,18 @@ class Renderer {
     const scrollTop = buffer.scrollTop || 0;
     const scrollLeft = buffer.scrollLeft || 0;
     const selection = buffer.getSelectionRange ? buffer.getSelectionRange() : null;
+    
+    // Get language and tokenize for syntax highlighting
+    const language = Syntax.getLanguage(filePath);
+    const cacheKey = filePath + ':' + lines.length;
+    let tokenLines = this.tokenCache.get(cacheKey);
+    const cachedLang = this.tokenCache.get(cacheKey + '_lang');
+    
+    if (!tokenLines || cachedLang !== language) {
+      tokenLines = language ? Syntax.tokenizeDocument(lines, language) : null;
+      this.tokenCache.set(cacheKey, tokenLines);
+      this.tokenCache.set(cacheKey + '_lang', language);
+    }
     
     // Build a set of search match positions for highlighting
     const matchPositions = new Set();
@@ -357,6 +395,9 @@ class Renderer {
         const editorX = x + gutterWidth;
         const editorWidth = width - gutterWidth;
         
+        // Get tokens for this line if available
+        const lineTokens = tokenLines ? tokenLines[lineNum] : null;
+        
         // Render character by character for selection/search highlighting
         for (let c = 0; c < editorWidth; c++) {
           const charCol = scrollLeft + c;
@@ -364,6 +405,14 @@ class Renderer {
           
           let fg = theme.editorFg;
           let bg = theme.editorBg;
+          
+          // Apply syntax highlighting if available
+          if (lineTokens && charCol < line.length) {
+            const tokenInfo = this._getTokenAt(lineTokens, charCol);
+            if (tokenInfo) {
+              fg = this._getSyntaxColor(tokenInfo.type);
+            }
+          }
           
           // Check if in selection
           if (selection) {
@@ -390,6 +439,21 @@ class Renderer {
         }
       }
     }
+  }
+  
+  /**
+   * Get token type at a specific column in a line
+   */
+  _getTokenAt(tokens, col) {
+    if (!tokens) return null;
+    let pos = 0;
+    for (const token of tokens) {
+      if (col >= pos && col < pos + token.text.length) {
+        return { type: token.type, text: token.text };
+      }
+      pos += token.text.length;
+    }
+    return null;
   }
   
   /**

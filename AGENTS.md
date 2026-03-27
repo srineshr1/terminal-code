@@ -1,8 +1,8 @@
-# AGENTS.md - VSCode CLI Editor Project Guidelines
+# AGENTS.md - VSCode CLI Editor
 
 ## Project Overview
 
-A VSCode-style CLI text editor built with Node.js and the blessed library for terminal UI rendering. Supports tabs, file explorer, search/replace, syntax highlighting, and mouse/keyboard input.
+VSCode-style CLI text editor built with Node.js and blessed for terminal UI. Supports tabs, file explorer, search/replace, syntax highlighting, and mouse/keyboard input.
 
 ## Build/Run Commands
 
@@ -13,75 +13,85 @@ node index.js --help         # Show help
 node index.js --version      # Show version
 ```
 
-**Note**: No automated tests are currently configured.
-
 ## Project Structure
 
 ```
 src/
 ├── app.js               # Main Application class
-├── core/state.js        # State management (EventEmitter-based)
-├── core/actions.js      # Action types and creators
-├── editor/Buffer.js     # Text buffer model (core editing)
-├── editor/Clipboard.js  # Copy/cut/paste clipboard store
-├── editor/History.js    # Undo/redo (snapshot-based)
-├── editor/Search.js     # Search/replace functionality
-├── files/FileTree.js    # Directory tree model
-├── files/fileSystem.js  # Safe file operations
-├── input/keybindings.js # VSCode-style keybinding definitions
-├── ui/BlessedRenderer.js# Blessed-based terminal UI
-└── utils/logger.js      # Debug logging utility
+├── core/
+│   ├── state.js         # State management (EventEmitter-based)
+│   └── actions.js       # Action types and creators
+├── editor/
+│   ├── Buffer.js        # Text buffer model (cursor, selection, editing)
+│   ├── Clipboard.js     # Copy/cut/paste clipboard store
+│   ├── History.js       # Undo/redo (snapshot-based)
+│   ├── Search.js        # Search/replace functionality
+│   └── Syntax.js        # Syntax highlighting
+├── files/
+│   ├── FileTree.js      # Directory tree model
+│   ├── fileSystem.js    # Safe file read/write
+│   └── fileOps.js       # File operations (mkdir, rename, delete)
+├── input/
+│   ├── keybindings.js   # VSCode-style keybinding definitions
+│   ├── keyboard.js      # Keyboard event handling
+│   ├── mouse.js         # Mouse event handling
+│   └── inputHandler.js  # Unified input handling
+├── ui/
+│   ├── BlessedRenderer.js # Blessed-based terminal UI
+│   ├── Renderer.js      # Renderer abstraction layer
+│   ├── Screen.js        # Screen management
+│   ├── themes/default.js # Theme definitions
+│   └── components/      # UI components (Editor, Explorer, TabBar, StatusBar, SearchOverlay)
+├── utils/
+│   ├── logger.js        # Debug logging (writes to ./editor.log)
+│   └── layout.js        # Layout utilities
+├── editor.js, files.js, components.js, ui.js, layout.js, ansi.js, index.js
 ```
 
-## Code Style Guidelines
+## Code Style
 
 ### General Rules
-
-- **No comments** in code unless explaining complex logic
-- **JSDoc comments** only for public class methods and API
-- Use `'use strict';` at top of every module file
+- No comments unless explaining complex logic
+- JSDoc for public class methods and API only
+- `'use strict';` at top of every module
 - CommonJS modules (`require`/`module.exports`) - NOT ES modules
 
-### Imports (Order matters)
-
+### Imports (Order: built-ins → external → internal)
 ```javascript
-const path = require('path');              // Node built-ins first
+const path = require('path');
 const fs = require('fs').promises;
-const blessed = require('blessed');         // External dependencies second
-const State = require('./core/state');      // Internal modules last
+const blessed = require('blessed');
+const State = require('./core/state');
 ```
 
 ### Formatting
-
 - 2 spaces indentation
 - Single quotes for strings
 - No trailing commas
-- Max line length: ~100 chars
+- ~100 char line length
 - Blank lines between logical sections
 
 ### Naming Conventions
-
 | Type | Convention | Example |
-|------|------------|----------|
+|------|------------|---------|
 | Classes | PascalCase | `Buffer`, `FileTree` |
 | Functions/Methods | camelCase | `findKeybinding` |
 | Private methods | _camelCase | `_handleKeypress` |
 | Constants | SCREAMING_SNAKE_CASE | `LOG_LEVELS` |
 | Event types | category.action | `file.save` |
 
-### Classes
-
+### Class Structure
 ```javascript
 class Buffer {
-  constructor(options = {}) {
-    this.lines = options.lines || [''];
-    this._cursor = { line: 0, col: 0 };
+  constructor(content = '') {
+    this.lines = content ? content.split('\n') : [''];
+    this.cursor = { line: 0, col: 0 };
   }
-  
+
   _bindMethods() {
     this._onChange = this._onChange.bind(this);
   }
-  
+
   /**
    * @param {string} text - Text to insert
    */
@@ -90,7 +100,6 @@ class Buffer {
 ```
 
 ### Error Handling
-
 ```javascript
 // Async: try/catch
 async function openFile(filePath) {
@@ -108,14 +117,13 @@ function setCursor(line, col) {
 ```
 
 ### State Management
-
 ```javascript
 class State extends EventEmitter {
   get(key) { return this._data[key]; }
   set(key, value) {
-    const old = this._data[key];
+    const oldValue = this._data[key];
     this._data[key] = value;
-    if (old !== value) this.emit('change', key, value, old);
+    if (oldValue !== value) this.emit('change', key, value, oldValue);
   }
   subscribe(listener) {
     this.on('change', listener);
@@ -125,19 +133,15 @@ class State extends EventEmitter {
 ```
 
 ### Module Exports
-
 ```javascript
-module.exports = ClassName;                    // Single class
-module.exports = { readFile, writeFile };       // Named exports
-const { readFile } = require('./fileSystem');   // Destructured import
+module.exports = ClassName;
+module.exports = { readFile, writeFile };
 ```
 
 ## Key Patterns
 
-### Action Dispatch Pattern
-
-Actions are strings in format `category.actionName`:
-
+### Action Dispatch
+Actions are strings: `category.actionName`
 ```javascript
 executeAction(action) {
   const [category, name] = action.split('.');
@@ -149,17 +153,15 @@ executeAction(action) {
 ```
 
 ### Buffer Model
-
 Core editing model with cursor `{line, col}` and selection `{anchor, head}`.
 
 ## Testing
 
-No test framework configured. Recommended: Jest
-
+No test framework configured. To add tests:
 ```bash
 npm install --save-dev jest
 npx jest path/to/test.js    # Run single test file
-npx jest -t "test name"     # Run specific test
+npx jest -t "test name"      # Run specific test by name
 ```
 
 ## Debugging
@@ -168,10 +170,8 @@ npx jest -t "test name"     # Run specific test
 const logger = require('./utils/logger');
 logger.debug('category', 'message', { data });
 ```
-
 Logs written to `./editor.log`.
 
 ## Dependencies
-
 - **blessed** (^0.1.81): Terminal UI rendering
 - Node.js built-ins: `path`, `fs`, `events`

@@ -94,7 +94,9 @@ class BlessedRenderer {
 
   _updateMenuHighlight() {
     const items = this.currentMenuItems.filter(item => item.type !== 'separator');
-    
+    const shortcutFg = theme.menuShortcutFg.join(';');
+    const itemContentWidth = 28;
+
     for (let i = 0; i < this.currentMenuItems.length; i++) {
       const item = this.currentMenuItems[i];
       const widget = this.widgets[`menuitem_${i}`];
@@ -105,15 +107,25 @@ class BlessedRenderer {
       } else {
         const itemIndex = items.indexOf(item);
         const isSelected = itemIndex === this.menuSelectedIndex;
-        
+
         if (isSelected) {
           widget.style.bg = rgb(theme.menuDropdownHoverBg);
           widget.style.fg = rgb(theme.menuDropdownHoverFg);
-          widget.setContent(`▸ ${item.label}`);
+          if (item.shortcut) {
+            const padding = Math.max(1, itemContentWidth - item.label.length - item.shortcut.length - 2);
+            widget.setContent(` ${item.label}${' '.repeat(padding)}{${shortcutFg}-fg}${item.shortcut}{/${shortcutFg}-fg}`);
+          } else {
+            widget.setContent(` ${item.label}`);
+          }
         } else {
           widget.style.bg = rgb(theme.menuDropdownBg);
           widget.style.fg = rgb(theme.menuDropdownFg);
-          widget.setContent(` ${item.label}`);
+          if (item.shortcut) {
+            const padding = Math.max(1, itemContentWidth - item.label.length - item.shortcut.length - 2);
+            widget.setContent(` ${item.label}${' '.repeat(padding)}{${shortcutFg}-fg}${item.shortcut}{/${shortcutFg}-fg}`);
+          } else {
+            widget.setContent(` ${item.label}`);
+          }
         }
       }
     }
@@ -206,7 +218,7 @@ class BlessedRenderer {
   }
 
   _buildTabBar(tabs, activeIndex) {
-    const sidebarWidth = this.state.showExplorer ? 24 : 0;
+    const sidebarWidth = this.state.showExplorer ? 30 : 0;
     const tabBarTop = 1;
     const tabBarHeight = 1;
 
@@ -232,47 +244,62 @@ class BlessedRenderer {
 
     if (tabs.length === 0) {
       tabBarBg.setContent(' No files open');
+      return;
     }
 
-    const TAB_GAP = 1;
     let col = 0;
-    
+
     for (let i = 0; i < tabs.length; i++) {
       const tab = tabs[i];
       const isActive = i === activeIndex;
       const title = tab.title || 'Untitled';
-      const displayTitle = title.length > 14 ? title.substring(0, 13) + '\u2026' : title;
-      
-      const leftPadding = 2;
-      const rightPadding = 4;
-      const tabWidth = displayTitle.length + leftPadding + rightPadding;
-      const tabLeft = col + (i > 0 ? TAB_GAP : 0);
-      
+      const displayTitle = title.length > 12 ? title.substring(0, 11) + '\u2026' : title;
+      const num = String(i + 1);
+
+      const tabText = ` ${num} ${displayTitle}${tab.modified ? '*' : ' '} `;
+      const tabWidth = tabText.length + 1;
+      const tabLeft = col;
+
       const tabBox = blessed.box({
         parent: tabBarContent,
         left: tabLeft,
         top: 0,
         width: tabWidth,
         height: 1,
-        bg: isActive ? rgb(theme.tabActiveBg) : rgb(theme.tabBg),
+        bg: isActive ? rgb(theme.tabActiveBg) : rgb(theme.tabBarBg),
         fg: isActive ? rgb(theme.tabActiveFg) : rgb(theme.tabFg),
         clickable: true,
         tags: false,
-        content: ` ${displayTitle}  `,
+        content: ` ${num} ${displayTitle}${tab.modified ? '*' : ' '}`,
       });
 
       const closeBtn = blessed.text({
         parent: tabBarContent,
-        left: tabLeft + tabWidth - 3,
+        left: tabLeft + tabWidth - 2,
         top: 0,
-        width: 3,
+        width: 2,
         height: 1,
-        content: ' \u00D7 ',
-        bg: isActive ? rgb(theme.tabActiveBg) : rgb(theme.tabBg),
-        fg: isActive ? rgb([200, 200, 200]) : rgb(theme.tabCloseFg),
+        content: '\u00D7',
+        bg: isActive ? rgb(theme.tabActiveBg) : rgb(theme.tabBarBg),
+        fg: rgb(theme.tabCloseFg),
         clickable: true,
         tags: false,
       });
+
+      if (i < tabs.length - 1) {
+        const divider = blessed.text({
+          parent: tabBarContent,
+          left: tabLeft + tabWidth,
+          top: 0,
+          width: 1,
+          height: 1,
+          content: '\u2502',
+          bg: rgb(theme.tabBarBg),
+          fg: rgb(theme.tabDividerFg),
+          tags: false,
+        });
+        this.widgets[`tab_divider_${i}`] = divider;
+      }
 
       tabBox.on('click', () => {
         this.onClick('tab', i);
@@ -292,27 +319,13 @@ class BlessedRenderer {
 
       tabBox.on('mouseout', () => {
         if (!isActive) {
-          tabBox.style.bg = rgb(theme.tabBg);
-          closeBtn.style.bg = rgb(theme.tabBg);
+          tabBox.style.bg = rgb(theme.tabBarBg);
+          closeBtn.style.bg = rgb(theme.tabBarBg);
           this.screen.render();
         }
       });
 
-      if (isActive) {
-        const activeIndicator = blessed.box({
-          parent: tabBarContent,
-          left: tabLeft,
-          bottom: 0,
-          width: tabWidth,
-          height: 1,
-          bg: rgb(tab.modified && !tab.saved ? theme.tabModifiedBorder || [200, 100, 100] : [0, 122, 204]),
-          content: '',
-          tags: false,
-        });
-        this.widgets[`tab_indicator_${i}`] = activeIndicator;
-      }
-
-      col = tabLeft + tabWidth;
+      col = tabLeft + tabWidth + 1;
       this.widgets[`tab_${i}`] = tabBox;
       this.widgets[`tabclose_${i}`] = closeBtn;
     }
@@ -322,7 +335,7 @@ class BlessedRenderer {
   }
 
   _buildSidebar(fileTree, selectedIndex) {
-    const sidebarWidth = 24;
+    const sidebarWidth = 30;
     
     const sidebar = blessed.box({
       parent: this.screen,
@@ -335,15 +348,21 @@ class BlessedRenderer {
       tags: false,
     });
 
-    const header = blessed.text({
+    const logo = blessed.box({
       parent: sidebar,
       top: 0,
       left: 0,
       width: sidebarWidth,
-      content: ' EXPLORER',
-      fg: rgb(theme.sidebarHeaderFg),
-      bg: rgb(theme.sidebarBg),
-      tags: false,
+      height: 8,
+      content: '\n' +
+        '{cyan-fg} ████████╗ ██████╗ {/cyan-fg}\n' +
+        '{cyan-fg} ╚══██╔══╝██╔════╝ {/cyan-fg}\n' +
+        '{cyan-fg}    ██║   ██║      {/cyan-fg}\n' +
+        '{cyan-fg}    ██║   ██║      {/cyan-fg}\n' +
+        '{cyan-fg}    ██║   ╚██████╗ {/cyan-fg}\n' +
+        '{cyan-fg}    ╚═╝    ╚═════╝ {/cyan-fg}',
+      tags: true,
+      style: { transparent: true },
     });
 
     this._sidebarLastClick = { index: -1, time: 0 };
@@ -351,32 +370,44 @@ class BlessedRenderer {
     for (let i = 0; i < fileTree.length; i++) {
       const file = fileTree[i];
       const isSelected = i === selectedIndex;
-      const icon = file.isDirectory ? '▸ ' : '  ';
+      const icon = file.isDirectory ? (file.expanded ? '▼ ' : '▸ ') : '';
       const displayName = stripAnsi(file.name);
       const truncatedName = displayName.length > 18 ? displayName.substring(0, 17) + '…' : displayName;
       
+      let prefix = '';
+      for (let d = 0; d < file.depth; d++) {
+        for (let j = i - 1; j >= 0; j--) {
+          const prev = fileTree[j];
+          if (prev.depth === d) {
+            if (!prev.isLast) {
+              prefix += '│ ';
+            }
+            break;
+          }
+        }
+      }
+      
+      const treePrefix = file.depth === 0 ? '' : (file.isLast ? '└─ ' : '├─ ');
+      const content = prefix + treePrefix + icon + truncatedName;
+      
       const item = blessed.text({
         parent: sidebar,
-        top: i + 1,
+        top: i + 8,
         left: 1,
         width: sidebarWidth - 2,
-        content: `${icon}${truncatedName}`,
+        content: content,
         fg: isSelected ? rgb(theme.sidebarSelectedFg) : 
             (file.isDirectory ? rgb(theme.sidebarFolderFg) : rgb(theme.sidebarFileFg)),
-        bg: isSelected ? rgb(theme.sidebarSelectedBg) : 'transparent',
+        bg: isSelected ? rgb(theme.sidebarSelectedBg) : rgb(theme.sidebarBg),
         clickable: true,
         tags: false,
       });
 
       item.on('click', () => {
-        const now = Date.now();
-        const isDoubleClick = (now - this._sidebarLastClick.time) < 300 && this._sidebarLastClick.index === i;
-        this._sidebarLastClick = { index: i, time: now };
-        
-        this.onClick('explorer', i);
-        
-        if (!file.isDirectory && (isDoubleClick || isSelected)) {
+        if (!file.isDirectory) {
           this.onClick('explorer_open', i);
+        } else {
+          this.onClick('explorer_toggle', i);
         }
       });
 
@@ -392,7 +423,7 @@ class BlessedRenderer {
       item.on('mouseout', () => {
         const currentlySelected = this.state.selectedFileIndex === i;
         if (!currentlySelected) {
-          item.style.bg = 'transparent';
+          item.style.bg = rgb(theme.sidebarBg);
           item.style.fg = file.isDirectory ? rgb(theme.sidebarFolderFg) : rgb(theme.sidebarFileFg);
           this.screen.render();
         }
@@ -643,32 +674,20 @@ class BlessedRenderer {
 
     const menuPositions = {
       file: 0,
-      edit: 5,
-      view: 10,
-      selection: 19,
+      edit: 7,
+      view: 14,
+      selection: 21,
     };
 
     const leftPos = menuPositions[menuId] || 0;
     const dropdownWidth = 30;
     const itemContentWidth = 28;
 
-    const sidebarWidth = this.state.showExplorer ? 24 : 0;
-    const backdrop = blessed.box({
-      parent: this.screen,
-      top: 1,
-      left: 0,
-      width: '100%',
-      height: 1,
-      bg: rgb(theme.menuDropdownBg),
-      fg: rgb(theme.menuDropdownFg),
-      tags: false,
-    });
-
     const dropdown = blessed.box({
       parent: this.screen,
       top: 1,
       left: leftPos,
-      width: dropdownWidth,
+      width: dropdownWidth + 2,
       height: items.length + 2,
       bg: rgb(theme.menuDropdownBg),
       fg: rgb(theme.menuDropdownFg),
@@ -679,7 +698,7 @@ class BlessedRenderer {
       tags: false,
     });
 
-    let row = 1;
+    let row = 0;
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
 
@@ -687,9 +706,9 @@ class BlessedRenderer {
         blessed.text({
           parent: dropdown,
           top: row,
-          left: 0,
-          width: dropdownWidth,
-          content: '─'.repeat(dropdownWidth - 2),
+          left: 1,
+          width: dropdownWidth - 2,
+          content: '─'.repeat(dropdownWidth - 4),
           fg: rgb(theme.menuSeparatorFg),
           bg: rgb(theme.menuDropdownBg),
           tags: false,
@@ -701,10 +720,11 @@ class BlessedRenderer {
       const label = item.label;
       const shortcut = item.shortcut || '';
       let content;
-      
+
       if (shortcut) {
         const padding = Math.max(1, itemContentWidth - label.length - shortcut.length - 2);
-        content = ` ${label}${' '.repeat(padding)}${shortcut}`;
+        const shortcutFg = theme.menuShortcutFg.join(';');
+        content = ` ${label}${' '.repeat(padding)}{${shortcutFg}-fg}${shortcut}{/${shortcutFg}-fg}`;
       } else {
         content = ` ${label}`;
       }
@@ -712,15 +732,15 @@ class BlessedRenderer {
       const menuItem = blessed.text({
         parent: dropdown,
         top: row,
-        left: 0,
-        width: dropdownWidth,
+        left: 1,
+        width: dropdownWidth - 2,
         content: content,
         bg: rgb(theme.menuDropdownBg),
-        fg: rgb(theme.menuDropdownFg),
+        fg: rgb(theme.menuDropdownBorder),
         hoverBg: rgb(theme.menuDropdownHoverBg),
         hoverFg: rgb(theme.menuDropdownHoverFg),
         clickable: true,
-        tags: false,
+        tags: true,
       });
 
       menuItem.on('click', () => {
@@ -741,6 +761,8 @@ class BlessedRenderer {
     }
 
     this.widgets.dropdown = dropdown;
+    this.menuSelectedIndex = -1;
+    this._updateMenuHighlight();
   }
 
   _rebuildLayout() {

@@ -20,6 +20,7 @@ class FileTree {
   async load() {
     this.nodes = [];
     await this._loadDirectory(this.rootPath, 0);
+    this._markLastItems();
   }
   
   /**
@@ -75,6 +76,7 @@ class FileTree {
     // Reload the tree to update the flat list
     this.nodes = [];
     this._loadDirectorySync(this.rootPath, 0);
+    this._markLastItems();
   }
   
   /**
@@ -115,6 +117,32 @@ class FileTree {
     }
   }
   
+  /**
+   * Mark items that are "last" in their depth level (before parent closes)
+   */
+  _markLastItems() {
+    for (let i = 0; i < this.nodes.length; i++) {
+      const current = this.nodes[i];
+      if (current.depth === 0) {
+        current.isLast = true;
+        continue;
+      }
+      
+      let isLast = true;
+      for (let j = i + 1; j < this.nodes.length; j++) {
+        const next = this.nodes[j];
+        if (next.depth === current.depth) {
+          isLast = false;
+          break;
+        }
+        if (next.depth < current.depth) {
+          break;
+        }
+      }
+      current.isLast = isLast;
+    }
+  }
+
   /**
    * Get all visible nodes (for rendering)
    */
