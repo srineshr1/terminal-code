@@ -1,34 +1,50 @@
-# VSCode CLI Editor
+# terminal-code
 
-A basic VSCode-style text editor for the terminal, built with Node.js and ANSI rendering.
+VSCode-style terminal text editor built with Node.js and blessed.
 
-## Run
-
-```bash
-npm .
-```
-
-Open a specific file:
+## Install
 
 ```bash
-node index.js path/to/file.txt
+npm install -g @ricky/terminal-code
 ```
 
-## Controls
+## Usage
 
-- `Arrow keys`: Move cursor / navigate explorer
-- `Tab`: Toggle focus between editor and explorer
-- `Enter`: New line in editor, open selected file in explorer
-- `Backspace`: Delete previous character
-- `Delete`: Delete character at cursor (if your terminal sends `\x1b[3~`)
-- `Ctrl+S`: Save current file
-- `Ctrl+O`: Open selected file from explorer
-- `Ctrl+N`: New empty buffer
-- `Ctrl+R`: Refresh explorer file list
+Start editor in current directory:
+
+```bash
+terminal-code
+```
+
+Open a file directly:
+
+```bash
+terminal-code path/to/file.txt
+```
+
+## Core Shortcuts
+
+- `Ctrl+N`: New file (prompts full path)
+- `Ctrl+S`: Save
+- `Ctrl+Shift+S`: Save As (full path prompt)
+- `Ctrl+Shift+R`: Rename active tab file
+- `Ctrl+Shift+D`: Delete active tab file (with confirmation)
+- `Ctrl+O`: Focus explorer
 - `Ctrl+Q`: Quit
 
-## Notes
+Explorer shortcuts (when explorer is focused):
 
-- New unsaved buffers are saved as `untitled.txt` when pressing `Ctrl+S`.
-- For now, explorer navigation is single-level (workspace root listing).
-# terminal-code
+- `Ctrl+Shift+N`: New file
+- `Ctrl+Alt+N`: New folder
+- `F2`: Rename selected item
+- `Delete`: Delete selected item
+- `Enter`: Open file / toggle folder
+
+## Publish
+
+```bash
+npm login
+npm publish --access public
+```
+
+After publishing, users can install globally with `npm install -g @ricky/terminal-code`.

@@ -12,7 +12,7 @@ const logger = require('../utils/logger');
 
 /**
  * InputHandler class
- * Manages raw input parsing and event dispatch
+ * Manages raw input parsing and event dispa
  */
 class InputHandler {
   constructor(app) {

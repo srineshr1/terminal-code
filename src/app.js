@@ -48,6 +48,7 @@ class App extends EventEmitter {
     
     // Bind methods
     this._onResize = this._onResize.bind(this);
+    this._notificationTimer = null;
   }
   
   /**
@@ -60,6 +61,9 @@ class App extends EventEmitter {
     this.state.set('searchQuery', '');
     this.state.set('replaceQuery', '');
     this.state.set('menuOpen', null);
+    this.state.set('confirmDialog', null);
+    this.state.set('inputDialog', null);
+    this.state.set('notification', null);
   }
   
   /**
@@ -89,11 +93,9 @@ class App extends EventEmitter {
     this.state.set('selectedFileIndex', 0);
     this.state.set('workingDirectory', startDir);
     
-    // Open initial file or create new buffer
+    // Open initial file if provided
     if (initialPath && await fileExists(initialPath)) {
       await this.openFile(path.resolve(initialPath));
-    } else {
-      this._createNewTab(null);
     }
     
     // Initial render
@@ -107,11 +109,31 @@ class App extends EventEmitter {
    * Handle keyboard input
    */
   _handleKeypress(ch, key) {
-    const tab = this.tabs[this.activeTabIndex];
-    if (!tab) return;
-    
     const rawKeyName = key.name;
     const keyName = this._normalizeKeyName(rawKeyName);
+    const inputDialog = this.state.get('inputDialog');
+
+    if (inputDialog) {
+      this._handleInputDialogKey(ch, keyName, key);
+      return;
+    }
+
+    if (this.state.get('confirmDialog')) {
+      if (keyName === 'escape') {
+        const dialog = this.state.get('confirmDialog');
+        if (dialog && dialog.callback) {
+          dialog.callback((dialog.buttons || []).length - 1);
+        }
+        return;
+      }
+      if (keyName === 'return') {
+        const dialog = this.state.get('confirmDialog');
+        if (dialog && dialog.callback) {
+          dialog.callback(0);
+        }
+        return;
+      }
+    }
     
     // Handle escape
     if (keyName === 'escape') {
@@ -177,6 +199,34 @@ class App extends EventEmitter {
       this.quit();
       return;
     }
+
+    if (key.ctrl && keyName === 'n' && !key.shift && !key.alt) {
+      this.executeAction('file.new');
+      return;
+    }
+
+    if (key.ctrl && keyName === 's' && !key.shift) {
+      this.executeAction('file.save');
+      return;
+    }
+
+    if (key.ctrl && keyName === 's' && key.shift) {
+      this.executeAction('file.saveAs');
+      return;
+    }
+
+    if (key.ctrl && key.shift && keyName === 'r') {
+      this.executeAction('file.rename');
+      return;
+    }
+
+    if ((key.ctrl && key.shift && keyName === 'd') || (key.ctrl && key.shift && keyName === 'delete')) {
+      this.executeAction('file.delete');
+      return;
+    }
+
+    const tab = this.tabs[this.activeTabIndex];
+    if (!tab) return;
     
     // Editor input (only when focus is on editor)
     if (focus === 'editor') {
@@ -244,7 +294,50 @@ class App extends EventEmitter {
         this._render();
       } else if (keyName === 'return') {
         this._openSelectedFile();
+      } else if (keyName === 'f2') {
+        this.executeAction('explorer.rename');
+      } else if (keyName === 'delete') {
+        this.executeAction('explorer.delete');
+      } else if (key.ctrl && key.shift && keyName === 'n') {
+        this.executeAction('explorer.newFile');
+      } else if (key.ctrl && key.alt && keyName === 'n') {
+        this.executeAction('explorer.newFolder');
       }
+    }
+  }
+
+  _handleInputDialogKey(ch, keyName, key) {
+    const dialog = this.state.get('inputDialog');
+    if (!dialog) return;
+
+    const value = dialog.value || '';
+
+    if (keyName === 'escape') {
+      this._resolveInputDialog(null);
+      return;
+    }
+
+    if (keyName === 'return') {
+      this._resolveInputDialog(value);
+      return;
+    }
+
+    if (keyName === 'backspace') {
+      if (value.length > 0) {
+        this.state.set('inputDialog', Object.assign({}, dialog, {
+          value: value.slice(0, -1)
+        }));
+        this._render();
+      }
+      return;
+    }
+
+    if (!key.ctrl && !key.alt && ((ch && ch.length === 1) || (key.name && key.name.length === 1))) {
+      const charToInsert = (ch && ch.length === 1) ? ch : key.name;
+      this.state.set('inputDialog', Object.assign({}, dialog, {
+        value: value + charToInsert
+      }));
+      this._render();
     }
   }
   
@@ -356,6 +449,9 @@ class App extends EventEmitter {
       searchQuery: this.state.get('searchQuery'),
       replaceQuery: this.state.get('replaceQuery'),
       menuOpen: this.state.get('menuOpen'),
+      confirmDialog: this.state.get('confirmDialog'),
+      inputDialog: this.state.get('inputDialog'),
+      notification: this.state.get('notification'),
       filePath: tab ? tab.filePath : null,
       cursorLine: buffer ? buffer.cursor.line + 1 : 1,
       cursorCol: buffer ? buffer.cursor.col + 1 : 1,
@@ -406,7 +502,7 @@ class App extends EventEmitter {
   _handleFileAction(name) {
     switch (name) {
       case 'new':
-        this._createNewTab(null);
+        this._promptNewFile();
         break;
       case 'open':
         this.state.set('focus', 'explorer');
@@ -419,6 +515,12 @@ class App extends EventEmitter {
         break;
       case 'saveAs':
         this._saveCurrentTabAs();
+        break;
+      case 'rename':
+        this._renameActiveTabFile();
+        break;
+      case 'delete':
+        this._deleteActiveTabFile();
         break;
     }
   }
@@ -533,6 +635,18 @@ class App extends EventEmitter {
           this.fileTree.toggle(selectedFile.path);
           this.state.set('fileTree', this.fileTree.getVisibleNodes());
         }
+        break;
+      case 'newFile':
+        this._promptNewFile(selectedFile && selectedFile.isDirectory ? selectedFile.path : this.state.get('workingDirectory'));
+        break;
+      case 'newFolder':
+        this._promptNewFolder(selectedFile && selectedFile.isDirectory ? selectedFile.path : this.state.get('workingDirectory'));
+        break;
+      case 'rename':
+        this._renameExplorerItem(selectedFile);
+        break;
+      case 'delete':
+        this._deleteExplorerItem(selectedFile);
         break;
     }
   }
@@ -710,15 +824,35 @@ class App extends EventEmitter {
       const content = tab.buffer.lines.join('\n');
       await writeFile(tab.filePath, content);
       tab.modified = false;
-      this._showMessage('Saved: ' + tab.filePath);
+      this._showNotification('Saved to ' + tab.filePath, 'success');
     } catch (err) {
-      this._showMessage('Failed to save: ' + err.message);
+      this._showNotification('Failed to save: ' + err.message, 'error');
     }
   }
   
   async _saveCurrentTabAs() {
-    // Would show save dialog
-    this._showMessage('Save As not implemented yet');
+    const tab = this.tabs[this.activeTabIndex];
+    if (!tab) return;
+
+    const defaultPath = tab.filePath || path.join(this.state.get('workingDirectory') || process.cwd(), 'new-file.txt');
+    this._showInputDialog({
+      title: 'Save As',
+      prompt: 'Enter full file path:',
+      value: defaultPath,
+      callback: async (newPath) => {
+        if (!newPath) return;
+        try {
+          const content = tab.buffer.lines.join('\n');
+          await writeFile(newPath, content);
+          tab.filePath = newPath;
+          tab.modified = false;
+          this._showNotification('Saved to ' + newPath, 'success');
+          this._refreshFileTree();
+        } catch (err) {
+          this._showNotification('Failed to save: ' + err.message, 'error');
+        }
+      }
+    });
   }
   
   async _openSelectedFile(index) {
@@ -767,13 +901,210 @@ class App extends EventEmitter {
   }
   
   _showMessage(msg) {
-    if (this.renderer && this.renderer.widgets.statusBar) {
-      const leftInfo = this.renderer.widgets.statusBar.children[0];
-      if (leftInfo && leftInfo.setContent) {
-        leftInfo.setContent(msg);
-        this.renderer.render();
-      }
+    this._showNotification(msg, 'info');
+  }
+
+  _showNotification(message, type = 'info') {
+    if (this._notificationTimer) {
+      clearTimeout(this._notificationTimer);
+      this._notificationTimer = null;
     }
+
+    this.state.set('notification', { message, type });
+    this._render();
+
+    this._notificationTimer = setTimeout(() => {
+      this.state.set('notification', null);
+      this._notificationTimer = null;
+      this._render();
+    }, 2500);
+  }
+
+  _showInputDialog(dialog) {
+    this.state.set('inputDialog', {
+      title: dialog.title || 'Input',
+      prompt: dialog.prompt || '',
+      value: dialog.value || '',
+      callback: dialog.callback,
+    });
+    this._render();
+  }
+
+  _resolveInputDialog(value) {
+    const dialog = this.state.get('inputDialog');
+    this.state.set('inputDialog', null);
+    this._render();
+    if (dialog && dialog.callback) {
+      dialog.callback(value);
+    }
+  }
+
+  _promptNewFile(baseDir) {
+    const folder = baseDir || this.state.get('workingDirectory') || process.cwd();
+    const defaultPath = path.join(folder, 'new-file.txt');
+    this._showInputDialog({
+      title: 'New File',
+      prompt: 'Enter full file path:',
+      value: defaultPath,
+      callback: async (filePath) => {
+        if (!filePath) return;
+        try {
+          await writeFile(filePath, '');
+          await this.openFile(filePath);
+          this.state.set('focus', 'editor');
+          this._showNotification('Created ' + filePath, 'success');
+          this._refreshFileTree();
+          this._render();
+        } catch (err) {
+          this._showNotification('Failed to create file: ' + err.message, 'error');
+        }
+      }
+    });
+  }
+
+  _promptNewFolder(baseDir) {
+    const folder = baseDir || this.state.get('workingDirectory') || process.cwd();
+    const defaultPath = path.join(folder, 'new-folder');
+    this._showInputDialog({
+      title: 'New Folder',
+      prompt: 'Enter full folder path:',
+      value: defaultPath,
+      callback: async (folderPath) => {
+        if (!folderPath) return;
+        try {
+          await fs.mkdir(folderPath, { recursive: true });
+          this._showNotification('Created folder ' + folderPath, 'success');
+          this._refreshFileTree();
+        } catch (err) {
+          this._showNotification('Failed to create folder: ' + err.message, 'error');
+        }
+      }
+    });
+  }
+
+  _renameActiveTabFile() {
+    const tab = this.tabs[this.activeTabIndex];
+    if (!tab || !tab.filePath) {
+      this._showNotification('No saved file to rename', 'error');
+      return;
+    }
+
+    this._showInputDialog({
+      title: 'Rename File',
+      prompt: 'Enter new full path:',
+      value: tab.filePath,
+      callback: async (newPath) => {
+        if (!newPath || newPath === tab.filePath) return;
+        try {
+          const oldPath = tab.filePath;
+          await fs.rename(oldPath, newPath);
+          tab.filePath = newPath;
+          this._showNotification('Renamed to ' + newPath, 'success');
+          this._refreshFileTree();
+          this._render();
+        } catch (err) {
+          this._showNotification('Rename failed: ' + err.message, 'error');
+        }
+      }
+    });
+  }
+
+  _deleteActiveTabFile() {
+    const tab = this.tabs[this.activeTabIndex];
+    if (!tab || !tab.filePath) {
+      this._showNotification('No saved file to delete', 'error');
+      return;
+    }
+
+    const targetPath = tab.filePath;
+    this.state.set('confirmDialog', {
+      title: 'Delete File',
+      message: `Delete ${targetPath}?`,
+      buttons: ['Delete', 'Cancel'],
+      callback: async (buttonIndex) => {
+        this.state.set('confirmDialog', null);
+        if (buttonIndex !== 0) {
+          this._render();
+          return;
+        }
+        try {
+          await fs.rm(targetPath, { force: true });
+          this._performCloseTab(this.activeTabIndex);
+          this._showNotification('Deleted ' + targetPath, 'success');
+          this._refreshFileTree();
+        } catch (err) {
+          this._showNotification('Delete failed: ' + err.message, 'error');
+          this._render();
+        }
+      }
+    });
+    this._render();
+  }
+
+  _renameExplorerItem(selectedFile) {
+    if (!selectedFile) return;
+    const currentPath = selectedFile.path;
+    this._showInputDialog({
+      title: 'Rename',
+      prompt: 'Enter new full path:',
+      value: currentPath,
+      callback: async (newPath) => {
+        if (!newPath || newPath === currentPath) return;
+        try {
+          await fs.rename(currentPath, newPath);
+          for (const tab of this.tabs) {
+            if (tab.filePath === currentPath) {
+              tab.filePath = newPath;
+            }
+          }
+          this._showNotification('Renamed to ' + newPath, 'success');
+          this._refreshFileTree();
+          this._render();
+        } catch (err) {
+          this._showNotification('Rename failed: ' + err.message, 'error');
+        }
+      }
+    });
+  }
+
+  _deleteExplorerItem(selectedFile) {
+    if (!selectedFile) return;
+    const targetPath = selectedFile.path;
+    this.state.set('confirmDialog', {
+      title: selectedFile.isDirectory ? 'Delete Folder' : 'Delete File',
+      message: `Delete ${targetPath}?`,
+      buttons: ['Delete', 'Cancel'],
+      callback: async (buttonIndex) => {
+        this.state.set('confirmDialog', null);
+        if (buttonIndex !== 0) {
+          this._render();
+          return;
+        }
+        try {
+          await fs.rm(targetPath, { recursive: true, force: true });
+          this.tabs = this.tabs.filter(t => t.filePath !== targetPath);
+          if (this.activeTabIndex >= this.tabs.length) {
+            this.activeTabIndex = Math.max(0, this.tabs.length - 1);
+          }
+          this._showNotification('Deleted ' + targetPath, 'success');
+          this._refreshFileTree();
+          this._render();
+        } catch (err) {
+          this._showNotification('Delete failed: ' + err.message, 'error');
+          this._render();
+        }
+      }
+    });
+    this._render();
+  }
+
+  _refreshFileTree() {
+    if (!this.fileTree) return;
+    this.fileTree.load().then(() => {
+      this.state.set('fileTree', this.fileTree.getVisibleNodes());
+      this._render();
+    }).catch(() => {
+    });
   }
 
   _normalizeKeyName(key) {
@@ -819,6 +1150,10 @@ class App extends EventEmitter {
     }
     
     // Exit
+    if (this._notificationTimer) {
+      clearTimeout(this._notificationTimer);
+      this._notificationTimer = null;
+    }
     process.exit(0);
   }
 }

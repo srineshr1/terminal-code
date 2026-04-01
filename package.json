@@ -1,9 +1,10 @@
 {
-  "name": "vscode-multiplayer",
+  "name": "@ricky/terminal-code",
   "version": "1.0.0",
-  "description": "Basic VSCode-style CLI text editor",
+  "description": "VSCode-style terminal text editor",
   "main": "index.js",
   "bin": {
+    "terminal-code": "index.js",
     "vscode-cli": "index.js"
   },
   "scripts": {
@@ -11,9 +12,18 @@
     "start:file": "node index.js package.json",
     "test": "node -e \"console.log('No automated tests yet')\""
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "terminal",
+    "editor",
+    "cli",
+    "text-editor",
+    "vscode"
+  ],
+  "author": "Ricky",
   "license": "ISC",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "commonjs",
   "dependencies": {
     "blessed": "^0.1.81",

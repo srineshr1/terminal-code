@@ -167,6 +167,8 @@ class BlessedRenderer {
     if (state.buffer) {
       this._buildEditor(state.buffer, state.focus === 'editor');
       this._buildScrollbar(state.buffer);
+    } else {
+      this._buildEmptyState();
     }
 
     this._buildStatusBar(state);
@@ -181,6 +183,14 @@ class BlessedRenderer {
 
     if (state.confirmDialog) {
       this._buildConfirmDialog(state.confirmDialog);
+    }
+
+    if (state.inputDialog) {
+      this._buildInputDialog(state.inputDialog);
+    }
+
+    if (state.notification) {
+      this._buildNotification(state.notification);
     }
 
     this.screen.render();
@@ -552,6 +562,27 @@ class BlessedRenderer {
     }
 
     this.widgets.editor = editor;
+  }
+
+  _buildEmptyState() {
+    const sidebarWidth = this.state.showExplorer ? 30 : 0;
+    const screenHeight = this.screen.height;
+    const editorHeight = screenHeight - 3;
+    const editorWidth = this.screen.width - sidebarWidth - 1;
+
+    const empty = blessed.box({
+      parent: this.screen,
+      top: 2,
+      left: sidebarWidth,
+      width: editorWidth,
+      height: editorHeight,
+      bg: rgb(theme.editorBg),
+      fg: rgb(theme.editorFg),
+      tags: true,
+      content: '{center}{bold}Terminal Code{/bold}{/center}'
+    });
+
+    this.widgets.emptyEditor = empty;
   }
 
   _buildScrollbar(buffer) {
@@ -1017,21 +1048,120 @@ class BlessedRenderer {
       this.widgets[`dialog_button_${i}`] = button;
     }
 
-    // Handle keyboard shortcuts
-    this.screen.key(['escape'], () => {
-      if (dialog.callback) {
-        dialog.callback(buttons.length - 1); // Last button (usually Cancel)
-      }
-    });
-
-    this.screen.key(['enter'], () => {
-      if (dialog.callback) {
-        dialog.callback(0); // First button (usually Save/OK)
-      }
-    });
-
     this.widgets.dialogOverlay = overlay;
     this.widgets.dialogBox = dialogBox;
+  }
+
+  _buildInputDialog(dialog) {
+    const screenWidth = this.screen.width;
+    const screenHeight = this.screen.height;
+    const dialogWidth = Math.min(80, Math.max(56, screenWidth - 12));
+    const dialogHeight = 11;
+    const dialogLeft = Math.floor((screenWidth - dialogWidth) / 2);
+    const dialogTop = Math.floor((screenHeight - dialogHeight) / 2);
+
+    const overlay = blessed.box({
+      parent: this.screen,
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      bg: 'black',
+      opacity: 0.7,
+      transparent: true,
+      tags: false
+    });
+
+    const dialogBox = blessed.box({
+      parent: this.screen,
+      top: dialogTop,
+      left: dialogLeft,
+      width: dialogWidth,
+      height: dialogHeight,
+      bg: rgb(theme.promptBg),
+      border: {
+        type: 'line',
+        fg: rgb(theme.promptBorderFg)
+      },
+      tags: true
+    });
+
+    blessed.text({
+      parent: dialogBox,
+      top: 0,
+      left: 2,
+      content: `{bold}${dialog.title || 'Input'}{/bold}`,
+      fg: rgb(theme.promptFg),
+      tags: true
+    });
+
+    blessed.text({
+      parent: dialogBox,
+      top: 2,
+      left: 2,
+      width: dialogWidth - 4,
+      content: dialog.prompt || '',
+      fg: rgb(theme.promptFg),
+      tags: false
+    });
+
+    const value = dialog.value || '';
+    const maxInputWidth = dialogWidth - 8;
+    const visibleValue = value.length > maxInputWidth ? value.slice(value.length - maxInputWidth) : value;
+    const cursorChar = this.state.focus === 'editor' ? '_' : '_';
+
+    blessed.box({
+      parent: dialogBox,
+      top: 4,
+      left: 2,
+      width: dialogWidth - 4,
+      height: 3,
+      border: { type: 'line', fg: rgb(theme.promptBorderFg) },
+      bg: rgb(theme.editorBg),
+      fg: rgb(theme.editorFg),
+      content: ` ${visibleValue}${cursorChar}`,
+      tags: false
+    });
+
+    blessed.text({
+      parent: dialogBox,
+      top: 8,
+      left: Math.floor((dialogWidth - 24) / 2),
+      content: '[ Enter ]   [ Esc ]',
+      fg: rgb(theme.promptFg),
+      bg: rgb(theme.promptBg),
+      tags: false
+    });
+
+    this.widgets.inputDialogOverlay = overlay;
+    this.widgets.inputDialogBox = dialogBox;
+  }
+
+  _buildNotification(notification) {
+    const message = notification.message || '';
+    const type = notification.type || 'info';
+    const colorMap = {
+      success: { bg: [18, 102, 56], fg: [240, 255, 246], icon: 'OK' },
+      error: { bg: [122, 37, 37], fg: [255, 240, 240], icon: 'ERR' },
+      info: { bg: [0, 122, 204], fg: [255, 255, 255], icon: 'INFO' }
+    };
+    const style = colorMap[type] || colorMap.info;
+    const content = ` ${style.icon} ${message} `;
+    const width = Math.min(this.screen.width - 4, Math.max(20, content.length));
+
+    const notificationBox = blessed.box({
+      parent: this.screen,
+      top: 0,
+      right: 1,
+      width,
+      height: 1,
+      bg: rgb(style.bg),
+      fg: rgb(style.fg),
+      content: content.length > width ? content.slice(0, width - 1) : content,
+      tags: false
+    });
+
+    this.widgets.notification = notificationBox;
   }
 
   render() {
@@ -1082,7 +1212,7 @@ class BlessedRenderer {
     if (!buffer || !buffer.lines) return;
     
     const gutterWidth = String(buffer.lines.length).length + 2;
-    const line = y - editorTop;
+    const line = (y - editorTop) + (buffer.scrollTop || 0);
     const col = x - sidebarWidth - gutterWidth;
     
     if (line >= 0 && line < buffer.lines.length) {

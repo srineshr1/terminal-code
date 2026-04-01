@@ -15,6 +15,8 @@ const keybindings = [
   { key: 'o', ctrl: true, shift: true, action: 'file.openFolder' },
   { key: 's', ctrl: true, action: 'file.save' },
   { key: 's', ctrl: true, shift: true, action: 'file.saveAs' },
+  { key: 'r', ctrl: true, shift: true, action: 'file.rename' },
+  { key: 'd', ctrl: true, shift: true, action: 'file.delete' },
   { key: 'w', ctrl: true, action: 'tab.close' },
   { key: 'q', ctrl: true, action: 'app.quit' },
   
