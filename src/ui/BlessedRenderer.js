@@ -585,7 +585,192 @@ class BlessedRenderer {
       bg: rgb(theme.editorBg),
       fg: rgb(theme.editorFg),
       tags: true,
-      content: '{center}{bold}Terminal Code{/bold}{/center}'
+    });
+
+    const logoHeight = 15;
+    const logoWidth = 42;
+    const startY = Math.floor((editorHeight - logoHeight) / 2);
+    const startX = Math.floor((editorWidth - logoWidth) / 2);
+
+    // Colors from Tokyo Night palette
+    const purple = rgb([187, 154, 247]);    // #bb9af7
+    const blue = rgb([122, 162, 247]);      // #7aa2f7
+    const cyan = rgb([125, 207, 255]);      // #7dcfff
+    const teal = rgb([115, 218, 202]);      // #73daca
+    const pink = rgb([247, 118, 142]);      // #f7768e
+    const orange = rgb([255, 158, 100]);    // #ff9e64
+    const muted = rgb([86, 95, 137]);       // #565f89
+
+    // Border box
+    blessed.box({
+      parent: empty,
+      top: startY,
+      left: startX,
+      width: logoWidth,
+      height: logoHeight,
+      bg: rgb(theme.editorBg),
+      fg: muted,
+      tags: false,
+      content: [
+        '╔════════════════════════════════════════╗',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '║                                        ║',
+        '╚════════════════════════════════════════╝',
+      ].join('\n'),
+    });
+
+    // T letter - Purple/Magenta gradient
+    blessed.text({
+      parent: empty,
+      top: startY + 2,
+      left: startX + 10,
+      bg: rgb(theme.editorBg),
+      fg: purple,
+      tags: false,
+      content: '████████╗',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 3,
+      left: startX + 13,
+      bg: rgb(theme.editorBg),
+      fg: purple,
+      tags: false,
+      content: '██║',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 4,
+      left: startX + 13,
+      bg: rgb(theme.editorBg),
+      fg: pink,
+      tags: false,
+      content: '██║',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 5,
+      left: startX + 13,
+      bg: rgb(theme.editorBg),
+      fg: pink,
+      tags: false,
+      content: '██║',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 6,
+      left: startX + 13,
+      bg: rgb(theme.editorBg),
+      fg: orange,
+      tags: false,
+      content: '██║',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 7,
+      left: startX + 13,
+      bg: rgb(theme.editorBg),
+      fg: orange,
+      tags: false,
+      content: '╚═╝',
+    });
+
+    // C letter - Blue/Cyan gradient
+    blessed.text({
+      parent: empty,
+      top: startY + 2,
+      left: startX + 20,
+      bg: rgb(theme.editorBg),
+      fg: blue,
+      tags: false,
+      content: '██████╗',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 3,
+      left: startX + 20,
+      bg: rgb(theme.editorBg),
+      fg: blue,
+      tags: false,
+      content: '██╔════╝',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 4,
+      left: startX + 20,
+      bg: rgb(theme.editorBg),
+      fg: cyan,
+      tags: false,
+      content: '██║',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 5,
+      left: startX + 20,
+      bg: rgb(theme.editorBg),
+      fg: cyan,
+      tags: false,
+      content: '██║',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 6,
+      left: startX + 20,
+      bg: rgb(theme.editorBg),
+      fg: teal,
+      tags: false,
+      content: '╚██████╗',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 7,
+      left: startX + 21,
+      bg: rgb(theme.editorBg),
+      fg: teal,
+      tags: false,
+      content: '╚═════╝',
+    });
+
+    // TERMINAL-CODE text with gradient
+    blessed.text({
+      parent: empty,
+      top: startY + 9,
+      left: startX + 9,
+      bg: rgb(theme.editorBg),
+      fg: cyan,
+      tags: false,
+      content: 'T E R M I N A L - C O D E',
+    });
+
+    // Help text
+    blessed.text({
+      parent: empty,
+      top: startY + 11,
+      left: startX + 6,
+      bg: rgb(theme.editorBg),
+      fg: muted,
+      tags: false,
+      content: 'Press Ctrl+O to open a file',
+    });
+    blessed.text({
+      parent: empty,
+      top: startY + 12,
+      left: startX + 6,
+      bg: rgb(theme.editorBg),
+      fg: muted,
+      tags: false,
+      content: 'Press Ctrl+N for new file',
     });
 
     this.widgets.emptyEditor = empty;
@@ -710,7 +895,7 @@ class BlessedRenderer {
       tags: false,
     });
 
-    const rightContent = `Ln ${state.cursorLine || 1}, Col ${state.cursorCol || 1} `;
+    const rightContent = `Made by Srinesh | Ln ${state.cursorLine || 1}, Col ${state.cursorCol || 1} `;
     blessed.text({
       parent: statusBar,
       right: 0,

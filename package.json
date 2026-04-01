@@ -1,5 +1,5 @@
 {
-  "name": "@ricky/terminal-code",
+  "name": "terminal-code",
   "version": "1.0.0",
   "description": "VSCode-style terminal text editor",
   "main": "index.js",
