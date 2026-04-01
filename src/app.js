@@ -72,6 +72,7 @@ class App extends EventEmitter {
       onKeypress: (ch, key) => this._handleKeypress(ch, key),
       onClick: (type, data) => this._handleClick(type, data),
       onMenuClick: (menuId) => this._handleMenuClick(menuId),
+      onScroll: (delta) => this.executeAction('scroll.lines', { delta }),
     });
     
     // Initialize blessed screen
@@ -109,8 +110,11 @@ class App extends EventEmitter {
     const tab = this.tabs[this.activeTabIndex];
     if (!tab) return;
     
+    const rawKeyName = key.name;
+    const keyName = this._normalizeKeyName(rawKeyName);
+    
     // Handle escape
-    if (key.name === 'escape') {
+    if (keyName === 'escape') {
       if (this.state.get('menuOpen')) {
         this.state.set('menuOpen', null);
         this.renderer.closeMenu();
@@ -127,7 +131,7 @@ class App extends EventEmitter {
     
     // Handle menu open state
     if (this.state.get('menuOpen')) {
-      if (key.name === 'return' || key.name === 'enter') {
+      if (keyName === 'return') {
         // Would select menu item
         this.state.set('menuOpen', null);
         this.renderer.closeMenu();
@@ -138,9 +142,9 @@ class App extends EventEmitter {
     
     // Handle search mode
     if (this.state.get('searchMode')) {
-      if (key.name === 'return') {
+      if (keyName === 'return') {
         this.executeAction('search.next');
-      } else if (key.name === 'escape') {
+      } else if (keyName === 'escape') {
         this.state.set('searchMode', false);
         this._render();
       }
@@ -151,63 +155,78 @@ class App extends EventEmitter {
     const focus = this.state.get('focus');
     
     // Navigation shortcuts
-    if (key.ctrl && key.name === 'b') {
+    if (key.ctrl && keyName === 'b') {
       this.state.set('sidebarVisible', !this.state.get('sidebarVisible'));
       this._render();
       return;
     }
     
-    if (key.ctrl && key.name === 'f') {
+    if (key.ctrl && keyName === 'f') {
       this.state.set('searchMode', true);
       this._render();
       return;
     }
     
-    if (key.ctrl && key.name === 'p') {
+    if (key.ctrl && keyName === 'p') {
       this.state.set('menuOpen', 'file');
       this._render();
       return;
     }
     
-    if (key.ctrl && key.name === 'q') {
+    if (key.ctrl && keyName === 'q') {
       this.quit();
       return;
     }
     
     // Editor input (only when focus is on editor)
     if (focus === 'editor') {
-      if (key.name === 'return') {
+      if (keyName === 'return') {
         tab.buffer.insert('\n');
         this._render();
-      } else if (key.name === 'backspace') {
+      } else if (keyName === 'backspace') {
         tab.buffer.backspace();
         this._render();
-      } else if (key.name === 'delete') {
+      } else if (keyName === 'delete') {
         tab.buffer.delete();
         this._render();
-      } else if (key.name === 'tab') {
+      } else if (keyName === 'tab') {
         tab.buffer.insert('  ');
         this._render();
-      } else if (key.name === 'left') {
-        tab.buffer.moveCursor(0, -1);
-        this._render();
-      } else if (key.name === 'right') {
-        tab.buffer.moveCursor(0, 1);
-        this._render();
-      } else if (key.name === 'up') {
+      } else if (keyName === 'left') {
         tab.buffer.moveCursor(-1, 0);
+        this._ensureCursorVisible(tab.buffer, this.renderer.getDimensions().height - 3);
         this._render();
-      } else if (key.name === 'down') {
+      } else if (keyName === 'right') {
         tab.buffer.moveCursor(1, 0);
+        this._ensureCursorVisible(tab.buffer, this.renderer.getDimensions().height - 3);
         this._render();
-      } else if (key.name === 'home') {
+      } else if (keyName === 'up') {
+        tab.buffer.moveCursor(0, -1);
+        this._ensureCursorVisible(tab.buffer, this.renderer.getDimensions().height - 3);
+        this._render();
+      } else if (keyName === 'down') {
+        tab.buffer.moveCursor(0, 1);
+        this._ensureCursorVisible(tab.buffer, this.renderer.getDimensions().height - 3);
+        this._render();
+      } else if (keyName === 'home') {
         tab.buffer.moveToLineStart();
+        this._ensureCursorVisible(tab.buffer, this.renderer.getDimensions().height - 3);
         this._render();
-      } else if (key.name === 'end') {
+      } else if (keyName === 'end') {
         tab.buffer.moveToLineEnd();
+        this._ensureCursorVisible(tab.buffer, this.renderer.getDimensions().height - 3);
         this._render();
-      } else if (ch && ch.length === 1) {
-        tab.buffer.insert(ch);
+      } else if (keyName === 'pageup') {
+        tab.buffer.moveCursor(0, -10);
+        this._ensureCursorVisible(tab.buffer, this.renderer.getDimensions().height - 3);
+        this._render();
+      } else if (keyName === 'pagedown') {
+        tab.buffer.moveCursor(0, 10);
+        this._ensureCursorVisible(tab.buffer, this.renderer.getDimensions().height - 3);
+        this._render();
+      } else if ((ch && ch.length === 1) || (rawKeyName && rawKeyName.length === 1 && !key.ctrl && !key.alt)) {
+        const charToInsert = (ch && ch.length === 1) ? ch : rawKeyName;
+        tab.buffer.insert(charToInsert);
         this._render();
       }
     }
@@ -217,13 +236,13 @@ class App extends EventEmitter {
       const selectedIndex = this.state.get('selectedFileIndex');
       const fileTree = this.state.get('fileTree');
       
-      if (key.name === 'up') {
+      if (keyName === 'up') {
         this.state.set('selectedFileIndex', Math.max(0, selectedIndex - 1));
         this._render();
-      } else if (key.name === 'down') {
+      } else if (keyName === 'down') {
         this.state.set('selectedFileIndex', Math.min(fileTree.length - 1, selectedIndex + 1));
         this._render();
-      } else if (key.name === 'return') {
+      } else if (keyName === 'return') {
         this._openSelectedFile();
       }
     }
@@ -236,6 +255,7 @@ class App extends EventEmitter {
     switch (type) {
       case 'tab':
         this.activeTabIndex = data;
+        this.state.set('focus', 'editor');
         this._render();
         break;
       case 'tab_close':
@@ -275,6 +295,16 @@ class App extends EventEmitter {
       case 'search_close':
         this.state.set('searchMode', false);
         this._render();
+        break;
+      case 'editor_click':
+        {
+          const tab = this.tabs[this.activeTabIndex];
+          if (tab && tab.buffer) {
+            tab.buffer.setCursor(data.line, data.col);
+            this.state.set('focus', 'editor');
+            this._render();
+          }
+        }
         break;
     }
   }
@@ -316,6 +346,7 @@ class App extends EventEmitter {
       buffer: buffer ? {
         lines: buffer.lines,
         cursor: buffer.cursor,
+        scrollTop: buffer.scrollTop,
       } : null,
       fileTree: this.state.get('fileTree'),
       selectedFileIndex: this.state.get('selectedFileIndex'),
@@ -358,6 +389,9 @@ class App extends EventEmitter {
         break;
       case 'select':
         this._handleSelectAction(name);
+        break;
+      case 'scroll':
+        this._handleScrollAction(name, args);
         break;
       case 'app':
         this._handleAppAction(name);
@@ -535,6 +569,47 @@ class App extends EventEmitter {
     }
   }
   
+  // === SCROLL ACTIONS ===
+  
+  _handleScrollAction(name, args) {
+    const tab = this.tabs[this.activeTabIndex];
+    if (!tab) return;
+    
+    const buffer = tab.buffer;
+    const editorHeight = this.renderer.getDimensions().height - 3;
+    const maxScroll = Math.max(0, buffer.lines.length - editorHeight);
+    
+    switch (name) {
+      case 'lines':
+        const scrollAmount = 3;
+        buffer.scrollTop = Math.max(0, Math.min(maxScroll, 
+          buffer.scrollTop + (args.delta * scrollAmount)));
+        break;
+      
+      case 'page':
+        const pageAmount = Math.floor(editorHeight * 0.8);
+        buffer.scrollTop = Math.max(0, Math.min(maxScroll,
+          buffer.scrollTop + (args.delta * pageAmount)));
+        break;
+      
+      case 'toLine':
+        buffer.scrollTop = Math.max(0, Math.min(maxScroll, args.line));
+        break;
+    }
+  }
+  
+  _ensureCursorVisible(buffer, editorHeight) {
+    const cursorLine = buffer.cursor.line;
+    const viewportStart = buffer.scrollTop;
+    const viewportEnd = buffer.scrollTop + editorHeight - 1;
+    
+    if (cursorLine < viewportStart) {
+      buffer.scrollTop = cursorLine;
+    } else if (cursorLine > viewportEnd) {
+      buffer.scrollTop = cursorLine - editorHeight + 1;
+    }
+  }
+  
   // === FILE OPERATIONS ===
   
   async openFile(filePath) {
@@ -573,6 +648,40 @@ class App extends EventEmitter {
   }
   
   _closeTab(index) {
+    const tab = this.tabs[index];
+    if (!tab) return;
+    
+    // Check if tab has unsaved changes
+    if (tab.modified) {
+      // Show confirmation dialog
+      this.state.set('confirmDialog', {
+        title: 'Unsaved Changes',
+        message: `Do you want to save changes to ${tab.title || 'Untitled'}?`,
+        buttons: ['Save', 'Don\'t Save', 'Cancel'],
+        callback: (buttonIndex) => {
+          this.state.set('confirmDialog', null);
+          if (buttonIndex === 0) {
+            // Save
+            this._saveCurrentTab().then(() => {
+              this._performCloseTab(index);
+            });
+          } else if (buttonIndex === 1) {
+            // Don't Save
+            this._performCloseTab(index);
+          }
+          // Cancel - do nothing
+          this._render();
+        }
+      });
+      this._render();
+      return;
+    }
+    
+    // No unsaved changes, close immediately
+    this._performCloseTab(index);
+  }
+  
+  _performCloseTab(index) {
     if (this.tabs.length <= 1) {
       // Don't close last tab, just clear it
       const tab = this.tabs[0];
@@ -585,6 +694,7 @@ class App extends EventEmitter {
         this.activeTabIndex = this.tabs.length - 1;
       }
     }
+    this._render();
   }
   
   async _saveCurrentTab() {
@@ -619,6 +729,7 @@ class App extends EventEmitter {
     if (!file || file.isDirectory) return;
     
     await this.openFile(file.path);
+    this.state.set('focus', 'editor');
     this._render();
   }
   
@@ -664,7 +775,40 @@ class App extends EventEmitter {
       }
     }
   }
-  
+
+  _normalizeKeyName(key) {
+    const keyMap = {
+      ArrowUp: 'up',
+      ArrowDown: 'down',
+      ArrowLeft: 'left',
+      ArrowRight: 'right',
+      Escape: 'escape',
+      Enter: 'return',
+      Return: 'return',
+      Backspace: 'backspace',
+      Delete: 'delete',
+      Tab: 'tab',
+      Home: 'home',
+      End: 'end',
+      PageUp: 'pageup',
+      PageDown: 'pagedown',
+      Insert: 'insert',
+      F1: 'f1',
+      F2: 'f2',
+      F3: 'f3',
+      F4: 'f4',
+      F5: 'f5',
+      F6: 'f6',
+      F7: 'f7',
+      F8: 'f8',
+      F9: 'f9',
+      F10: 'f10',
+      F11: 'f11',
+      F12: 'f12',
+    };
+    return keyMap[key] || key;
+  }
+
   /**
    * Quit the application
    */

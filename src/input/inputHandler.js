@@ -295,8 +295,8 @@ class InputHandler {
     
     // Handle scroll events
     if (type === MouseEventType.SCROLL) {
-      const direction = button === MouseButton.SCROLL_UP ? -3 : 3;
-      this.app.executeAction('scroll.lines', { delta: direction, col, row });
+      const delta = button === MouseButton.SCROLL_UP ? -1 : 1;
+      this.app.executeAction('scroll.lines', { delta, col, row });
       return;
     }
     

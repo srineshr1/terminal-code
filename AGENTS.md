@@ -4,14 +4,24 @@
 
 VSCode-style CLI text editor built with Node.js and blessed for terminal UI. Supports tabs, file explorer, search/replace, syntax highlighting, and mouse/keyboard input.
 
-## Build/Run Commands
+## Build/Run/Test Commands
 
 ```bash
-npm start                    # Run the editor
-node index.js <filepath>     # Run with a specific file
-node index.js --help         # Show help
-node index.js --version      # Show version
+# Run
+npm start                           # Run the editor (empty buffer)
+node index.js <filepath>            # Run with a specific file
+node index.js --help                # Show help
+node index.js --version             # Show version
+
+# Test
+npm test                            # No automated tests yet
+
+# Debug
+tail -f editor.log                  # Watch debug logs in real-time
+node --inspect index.js <filepath>  # Run with Node debugger
 ```
+
+**Note**: No test framework configured. To add tests, install jest and create test files.
 
 ## Project Structure
 
@@ -174,4 +184,28 @@ Logs written to `./editor.log`.
 
 ## Dependencies
 - **blessed** (^0.1.81): Terminal UI rendering
+- **node-pty** (^1.1.0): Pseudo-terminal functionality
 - Node.js built-ins: `path`, `fs`, `events`
+
+## Common Operations
+
+### File Operations
+- Opening files: `App.openFile(filePath)` - Reads file, creates tab with Buffer and History
+- Saving files: `App.saveFile()` - Writes Buffer content to disk
+- File tree: `FileTree` class manages directory structure, `FileTree.load()` to scan
+
+### Buffer Editing
+- Insert text: `buffer.insert(text)` - Inserts at cursor position
+- Delete: `buffer.deleteBackward()`, `buffer.deleteForward()`
+- Selection: `buffer.startSelection()`, `buffer.extendSelection(dx, dy)`
+- Undo/redo: `history.undo()`, `history.redo()` (snapshot-based)
+
+### State Updates
+- Set state: `state.set(key, value)` - Automatically emits 'change' event
+- Get state: `state.get(key)`
+- Subscribe: `state.subscribe(listener)` - Returns unsubscribe function
+
+### Keybindings
+- Defined in `src/input/keybindings.js` as array of `{ key, ctrl?, shift?, alt?, action, args? }`
+- Actions follow pattern: `'category.action'` (e.g., `'file.save'`, `'edit.copy'`)
+- Add new keybindings to keybindings array, handle in App action dispatcher

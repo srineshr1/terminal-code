@@ -65,24 +65,27 @@ const theme = {
   statusBarBg: [0, 122, 204],
   statusBarFg: [255, 255, 255],
 
+  scrollbarBg: [37, 37, 38],
+  scrollbarThumbBg: [121, 121, 121],
+
   promptBg: [37, 37, 38],
   promptFg: [204, 204, 204],
   promptBorderFg: [60, 60, 60],
 
   syntax: {
-    keyword: [197, 134, 192],
-    string: [206, 145, 120],
-    number: [181, 206, 168],
-    comment: [106, 153, 85],
-    function: [220, 220, 170],
-    type: [78, 201, 176],
-    constant: [197, 134, 192],
-    operator: [212, 212, 212],
-    punctuation: [212, 212, 212],
-    variable: [156, 220, 254],
-    tag: [235, 120, 85],
-    attribute: [156, 220, 254],
-    property: [86, 156, 214],
+    keyword: [197, 134, 192],       // #C586C0 - Purple (keep)
+    string: [206, 145, 120],        // #CE9178 - Orange (keep)
+    number: [181, 206, 168],        // #B5CEA8 - Light green (keep)
+    comment: [106, 153, 85],        // #6A9955 - Darker green (fixed)
+    function: [220, 220, 170],      // #DCDCAA - Light yellow (keep)
+    type: [78, 201, 176],           // #4EC9B0 - Teal (keep)
+    constant: [86, 156, 214],       // #569CD6 - Blue (fixed)
+    operator: [212, 212, 212],      // #D4D4D4 - Light gray (keep)
+    punctuation: [212, 212, 212],   // #D4D4D4 - Light gray (keep)
+    variable: [156, 220, 254],      // #9CDCFE - Light blue (keep)
+    tag: [86, 156, 214],            // #569CD6 - Blue (fixed)
+    attribute: [156, 220, 254],     // #9CDCFE - Light blue (keep)
+    property: [156, 220, 254],      // #9CDCFE - Light blue (fixed)
   },
 };
 

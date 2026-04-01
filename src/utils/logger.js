@@ -13,7 +13,7 @@ const LOG_LEVELS = {
 
 const config = {
   level: LOG_LEVELS.DEBUG,
-  enableConsole: true,
+  enableConsole: false,
   enableFile: true,
   filePath: './editor.log',
 };

@@ -7,6 +7,7 @@
 
 const blessed = require('blessed');
 const theme = require('./themes/default');
+const Syntax = require('../editor/Syntax');
 
 function rgb(arr) {
   if (!arr) return 'white';
@@ -39,6 +40,7 @@ class BlessedRenderer {
     this.onKeypress = options.onKeypress || (() => {});
     this.onClick = options.onClick || (() => {});
     this.onMenuClick = options.onMenuClick || (() => {});
+    this.onScroll = options.onScroll || (() => {});
     this.layout = null;
     this.menuSelectedIndex = -1;
     this.currentMenuItems = [];
@@ -59,6 +61,20 @@ class BlessedRenderer {
 
     this.screen.enableMouse();
     this._initialized = true;
+
+    this.screen.on('mouse', (event) => {
+      if (event.action === 'mousedown' || event.action === 'click') {
+        this._handleEditorClick(event);
+      }
+    });
+    
+    this.screen.on('wheelup', () => {
+      this.onScroll(-1);
+    });
+    
+    this.screen.on('wheeldown', () => {
+      this.onScroll(1);
+    });
 
     this.screen.on('keypress', (ch, key) => {
       this._handleMenuNavigation(ch, key);
@@ -150,6 +166,7 @@ class BlessedRenderer {
 
     if (state.buffer) {
       this._buildEditor(state.buffer, state.focus === 'editor');
+      this._buildScrollbar(state.buffer);
     }
 
     this._buildStatusBar(state);
@@ -160,6 +177,10 @@ class BlessedRenderer {
 
     if (state.menuOpen) {
       this._buildMenuDropdown(state.menuOpen);
+    }
+
+    if (state.confirmDialog) {
+      this._buildConfirmDialog(state.confirmDialog);
     }
 
     this.screen.render();
@@ -283,6 +304,7 @@ class BlessedRenderer {
         bg: isActive ? rgb(theme.tabActiveBg) : rgb(theme.tabBarBg),
         fg: rgb(theme.tabCloseFg),
         clickable: true,
+        mouse: true,
         tags: false,
       });
 
@@ -301,12 +323,13 @@ class BlessedRenderer {
         this.widgets[`tab_divider_${i}`] = divider;
       }
 
-      tabBox.on('click', () => {
-        this.onClick('tab', i);
+      closeBtn.on('click', () => {
+        this.onClick('tab_close', i);
+        return false; // Stop event propagation
       });
 
-      closeBtn.on('click', (e) => {
-        this.onClick('tab_close', i);
+      tabBox.on('click', () => {
+        this.onClick('tab', i);
       });
 
       tabBox.on('mouseover', () => {
@@ -353,14 +376,11 @@ class BlessedRenderer {
       top: 0,
       left: 0,
       width: sidebarWidth,
-      height: 8,
+      height: 5,
       content: '\n' +
-        '{cyan-fg} ████████╗ ██████╗ {/cyan-fg}\n' +
-        '{cyan-fg} ╚══██╔══╝██╔════╝ {/cyan-fg}\n' +
-        '{cyan-fg}    ██║   ██║      {/cyan-fg}\n' +
-        '{cyan-fg}    ██║   ██║      {/cyan-fg}\n' +
-        '{cyan-fg}    ██║   ╚██████╗ {/cyan-fg}\n' +
-        '{cyan-fg}    ╚═╝    ╚═════╝ {/cyan-fg}',
+        '    {cyan-fg}╭───╮{/cyan-fg}\n' +
+        '    {cyan-fg}│{/cyan-fg}{bold}{white-fg}TC{/white-fg}{/bold}{cyan-fg}│{/cyan-fg}  {bold}Terminal Code{/bold}\n' +
+        '    {cyan-fg}╰───╯{/cyan-fg}',
       tags: true,
       style: { transparent: true },
     });
@@ -392,7 +412,7 @@ class BlessedRenderer {
       
       const item = blessed.text({
         parent: sidebar,
-        top: i + 8,
+        top: i + 5,
         left: 1,
         width: sidebarWidth - 2,
         content: content,
@@ -436,28 +456,40 @@ class BlessedRenderer {
   }
 
   _buildEditor(buffer, focused) {
-    const sidebarWidth = this.state.showExplorer ? 24 : 0;
+    const sidebarWidth = this.state.showExplorer ? 30 : 0;
+    const screenHeight = this.screen.height;
+    const editorHeight = screenHeight - 3;
+    const editorWidth = this.screen.width - sidebarWidth - 1; // -1 for scrollbar
     
     const editor = blessed.box({
       parent: this.screen,
       top: 2,
       left: sidebarWidth,
-      width: '100%',
-      height: '100%-3',
+      width: editorWidth,
+      height: editorHeight,
       bg: rgb(theme.editorBg),
       fg: rgb(theme.editorFg),
-      scrollable: true,
-      tags: false,
+      tags: true,
     });
 
     const gutterWidth = String(buffer.lines.length).length + 2;
+    const contentWidth = editorWidth - gutterWidth - 1;
     
     const lines = buffer.lines || [''];
-    for (let i = 0; i < lines.length; i++) {
-      const rawLine = lines[i];
+    const language = Syntax.getLanguage(this.state.filePath);
+    const tokenizedLines = language ? Syntax.tokenizeDocument(lines, language) : null;
+    
+    const scrollTop = buffer.scrollTop || 0;
+    const visibleStart = scrollTop;
+    const visibleEnd = Math.min(lines.length, scrollTop + editorHeight);
+    const visibleLineCount = visibleEnd - visibleStart;
+    
+    for (let i = 0; i < visibleLineCount; i++) {
+      const lineIndex = visibleStart + i;
+      const rawLine = lines[lineIndex];
       const cleanLine = stripAnsi(rawLine);
       const displayLine = cleanLine.substring(0, 200);
-      const lineNum = String(i + 1).padStart(gutterWidth - 1, ' ');
+      const lineNum = String(lineIndex + 1).padStart(gutterWidth - 1, ' ');
       
       blessed.text({
         parent: editor,
@@ -470,35 +502,139 @@ class BlessedRenderer {
         tags: false,
       });
 
-      const lineContent = blessed.text({
-        parent: editor,
-        top: i,
-        left: gutterWidth,
-        width: '100%-' + gutterWidth,
-        content: displayLine,
-        fg: rgb(theme.editorFg),
-        bg: rgb(theme.editorBg),
-        tags: false,
-      });
+      let lineContent;
+      if (tokenizedLines && language) {
+        const tokens = tokenizedLines[lineIndex];
+        const coloredContent = this._buildColoredLine(tokens);
+        lineContent = blessed.text({
+          parent: editor,
+          top: i,
+          left: gutterWidth,
+          width: contentWidth,
+          content: coloredContent,
+          fg: rgb(theme.editorFg),
+          bg: rgb(theme.editorBg),
+          tags: true,
+        });
+      } else {
+        lineContent = blessed.text({
+          parent: editor,
+          top: i,
+          left: gutterWidth,
+          width: contentWidth,
+          content: displayLine,
+          fg: rgb(theme.editorFg),
+          bg: rgb(theme.editorBg),
+          tags: false,
+        });
+      }
 
       this.widgets[`line_${i}`] = lineContent;
     }
 
     if (focused && buffer.cursor) {
-      const cursor = blessed.box({
-        parent: editor,
-        top: buffer.cursor.line,
-        left: gutterWidth + buffer.cursor.col,
-        width: 1,
-        height: 1,
-        bg: rgb(theme.cursorBg),
-        fg: rgb(theme.cursorFg),
-        content: ' ',
-      });
-      this.widgets.cursor = cursor;
+      const cursorScreenLine = buffer.cursor.line - scrollTop;
+      if (cursorScreenLine >= 0 && cursorScreenLine < editorHeight) {
+        const cursor = blessed.box({
+          parent: editor,
+          top: cursorScreenLine,
+          left: gutterWidth + buffer.cursor.col,
+          width: 1,
+          height: 1,
+          bg: rgb(theme.cursorBg),
+          fg: rgb(theme.cursorFg),
+          content: ' ',
+        });
+        this.widgets.cursor = cursor;
+      }
+    } else if (this.widgets.cursor) {
+      delete this.widgets.cursor;
     }
 
     this.widgets.editor = editor;
+  }
+
+  _buildScrollbar(buffer) {
+    const totalLines = buffer.lines.length;
+    const screenHeight = this.screen.height;
+    const editorHeight = screenHeight - 3;
+    
+    if (totalLines <= editorHeight) {
+      return;
+    }
+    
+    const scrollTop = buffer.scrollTop || 0;
+    const scrollbarHeight = editorHeight;
+    
+    const visibleRatio = editorHeight / totalLines;
+    const thumbHeight = Math.max(1, Math.floor(scrollbarHeight * visibleRatio));
+    
+    const maxScroll = totalLines - editorHeight;
+    const scrollRatio = maxScroll > 0 ? scrollTop / maxScroll : 0;
+    const thumbTop = Math.floor(scrollRatio * (scrollbarHeight - thumbHeight));
+    
+    const scrollbarX = this.screen.width - 1;
+    const scrollbarY = 2;
+    
+    let scrollbarContent = '';
+    for (let i = 0; i < scrollbarHeight; i++) {
+      const isThumb = (i >= thumbTop && i < thumbTop + thumbHeight);
+      scrollbarContent += isThumb ? '█' : ' ';
+      if (i < scrollbarHeight - 1) scrollbarContent += '\n';
+    }
+    
+    const scrollbar = blessed.box({
+      parent: this.screen,
+      top: scrollbarY,
+      left: scrollbarX,
+      width: 1,
+      height: scrollbarHeight,
+      content: scrollbarContent,
+      bg: rgb(theme.scrollbarBg),
+      fg: rgb(theme.scrollbarThumbBg),
+      tags: false,
+    });
+    
+    this.widgets.scrollbar = scrollbar;
+  }
+
+  _buildColoredLine(tokens) {
+    let result = '';
+    for (const token of tokens) {
+      const color = this._getTokenColor(token.type);
+      if (color) {
+        result += `{${color}-fg}${token.text}{/${color}-fg}`;
+      } else {
+        result += token.text;
+      }
+    }
+    return result;
+  }
+
+  _getTokenColor(tokenType) {
+    const colorMap = {
+      keyword: theme.syntax.keyword,
+      string: theme.syntax.string,
+      number: theme.syntax.number,
+      comment: theme.syntax.comment,
+      function: theme.syntax.function,
+      type: theme.syntax.type,
+      constant: theme.syntax.constant,
+      operator: theme.syntax.operator,
+      punctuation: theme.syntax.punctuation,
+      variable: theme.syntax.variable,
+      tag: theme.syntax.tag,
+      attribute: theme.syntax.attribute,
+      property: theme.syntax.property,
+    };
+    const color = colorMap[tokenType];
+    if (!color) return null;
+    
+    // Convert RGB array to hex format for blessed tags
+    const [r, g, b] = color;
+    return '#' + r.toString(16).padStart(2, '0') + 
+                 g.toString(16).padStart(2, '0') + 
+                 b.toString(16).padStart(2, '0');
   }
 
   _buildStatusBar(state) {
@@ -771,6 +907,133 @@ class BlessedRenderer {
     }
   }
 
+  _buildConfirmDialog(dialog) {
+    const screenWidth = this.screen.width;
+    const screenHeight = this.screen.height;
+    const dialogWidth = 50;
+    const dialogHeight = 10;
+    const dialogLeft = Math.floor((screenWidth - dialogWidth) / 2);
+    const dialogTop = Math.floor((screenHeight - dialogHeight) / 2);
+
+    // Overlay to grey out background
+    const overlay = blessed.box({
+      parent: this.screen,
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      bg: 'black',
+      opacity: 0.7,
+      transparent: true,
+      tags: false,
+    });
+
+    // Dialog box
+    const dialogBox = blessed.box({
+      parent: this.screen,
+      top: dialogTop,
+      left: dialogLeft,
+      width: dialogWidth,
+      height: dialogHeight,
+      bg: rgb(theme.promptBg),
+      border: {
+        type: 'line',
+        fg: rgb(theme.promptBorderFg),
+      },
+      tags: true,
+    });
+
+    // Title
+    const title = blessed.text({
+      parent: dialogBox,
+      top: 0,
+      left: 2,
+      content: `{bold}${dialog.title || 'Confirm'}{/bold}`,
+      fg: rgb(theme.promptFg),
+      tags: true,
+    });
+
+    // Message
+    const message = blessed.text({
+      parent: dialogBox,
+      top: 2,
+      left: 2,
+      width: dialogWidth - 4,
+      content: dialog.message || '',
+      fg: rgb(theme.promptFg),
+      tags: false,
+    });
+
+    // Buttons
+    const buttons = dialog.buttons || ['OK', 'Cancel'];
+    const buttonWidth = 12;
+    const buttonSpacing = 2;
+    const totalButtonWidth = buttons.length * buttonWidth + (buttons.length - 1) * buttonSpacing;
+    const buttonStartLeft = Math.floor((dialogWidth - totalButtonWidth) / 2);
+
+    for (let i = 0; i < buttons.length; i++) {
+      const buttonLeft = buttonStartLeft + i * (buttonWidth + buttonSpacing);
+      const isDefault = i === 0;
+
+      const button = blessed.button({
+        parent: dialogBox,
+        top: dialogHeight - 3,
+        left: buttonLeft,
+        width: buttonWidth,
+        height: 1,
+        content: `{center}${buttons[i]}{/center}`,
+        bg: isDefault ? rgb(theme.statusBarBg) : rgb(theme.promptBg),
+        fg: isDefault ? rgb(theme.statusBarFg) : rgb(theme.promptFg),
+        border: {
+          type: 'line',
+          fg: rgb(theme.promptBorderFg),
+        },
+        clickable: true,
+        mouse: true,
+        tags: true,
+        shrink: true,
+        padding: {
+          left: 1,
+          right: 1,
+        },
+      });
+
+      button.on('click', () => {
+        if (dialog.callback) {
+          dialog.callback(i);
+        }
+      });
+
+      button.on('mouseover', () => {
+        button.style.bg = rgb(theme.menuDropdownHoverBg);
+        this.screen.render();
+      });
+
+      button.on('mouseout', () => {
+        button.style.bg = isDefault ? rgb(theme.statusBarBg) : rgb(theme.promptBg);
+        this.screen.render();
+      });
+
+      this.widgets[`dialog_button_${i}`] = button;
+    }
+
+    // Handle keyboard shortcuts
+    this.screen.key(['escape'], () => {
+      if (dialog.callback) {
+        dialog.callback(buttons.length - 1); // Last button (usually Cancel)
+      }
+    });
+
+    this.screen.key(['enter'], () => {
+      if (dialog.callback) {
+        dialog.callback(0); // First button (usually Save/OK)
+      }
+    });
+
+    this.widgets.dialogOverlay = overlay;
+    this.widgets.dialogBox = dialogBox;
+  }
+
   render() {
     if (this.screen) {
       this.screen.render();
@@ -803,6 +1066,29 @@ class BlessedRenderer {
     if (widget && widget.focus) {
       widget.focus();
       this.render();
+    }
+  }
+
+  _handleEditorClick(event) {
+    const { x, y } = event;
+    const sidebarWidth = this.state.showExplorer ? 30 : 0;
+    const editorTop = 2;
+    const editorBottom = this.screen.height - 3;
+    
+    if (y < editorTop || y >= editorBottom) return;
+    if (x < sidebarWidth) return;
+    
+    const buffer = this.state.buffer;
+    if (!buffer || !buffer.lines) return;
+    
+    const gutterWidth = String(buffer.lines.length).length + 2;
+    const line = y - editorTop;
+    const col = x - sidebarWidth - gutterWidth;
+    
+    if (line >= 0 && line < buffer.lines.length) {
+      const maxCol = buffer.lines[line].length;
+      const clampedCol = Math.max(0, Math.min(col, maxCol));
+      this.onClick('editor_click', { line, col: clampedCol });
     }
   }
 
