@@ -71,6 +71,13 @@ const theme = {
   promptBg: [37, 37, 38],
   promptFg: [204, 204, 204],
   promptBorderFg: [60, 60, 60],
+  promptTitleFg: [122, 162, 247],
+  promptLabelFg: [156, 220, 254],
+  promptHintFg: [100, 100, 100],
+  promptInputBg: [45, 45, 45],
+  promptInputBorderFg: [0, 122, 204],
+  promptButtonFg: [204, 204, 204],
+  promptButtonBg: [60, 60, 60],
 
   syntax: {
     keyword: [197, 134, 192],       // #C586C0 - Purple (keep)

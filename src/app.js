@@ -25,6 +25,9 @@ const FileTree = require('./files/FileTree');
 // UI
 const BlessedRenderer = require('./ui/BlessedRenderer');
 
+// Utils
+const logger = require('./utils/logger');
+
 /**
  * Application class
  * Main controller for the editor
@@ -49,6 +52,11 @@ class App extends EventEmitter {
     // Bind methods
     this._onResize = this._onResize.bind(this);
     this._notificationTimer = null;
+    
+    this._cursorBlinkTimer = null;
+    this._cursorPauseTimer = null;
+    this.CURSOR_BLINK_INTERVAL = 500;
+    this.CURSOR_PAUSE_DURATION = 1000;
   }
   
   /**
@@ -64,6 +72,44 @@ class App extends EventEmitter {
     this.state.set('confirmDialog', null);
     this.state.set('inputDialog', null);
     this.state.set('notification', null);
+    this.state.set('cursorVisible', true);
+  }
+  
+  _startCursorBlink() {
+    if (this._cursorBlinkTimer) return;
+    
+    this._cursorBlinkTimer = setInterval(() => {
+      const currentVisible = this.state.get('cursorVisible');
+      this.state.set('cursorVisible', !currentVisible);
+      this._render();
+    }, this.CURSOR_BLINK_INTERVAL);
+  }
+  
+  _stopCursorBlink() {
+    if (this._cursorBlinkTimer) {
+      clearInterval(this._cursorBlinkTimer);
+      this._cursorBlinkTimer = null;
+    }
+    this.state.set('cursorVisible', true);
+    this._render();
+  }
+  
+  _resetCursorBlink() {
+    this.state.set('cursorVisible', true);
+    
+    if (this._cursorBlinkTimer) {
+      clearInterval(this._cursorBlinkTimer);
+      this._cursorBlinkTimer = null;
+    }
+    
+    if (this._cursorPauseTimer) {
+      clearTimeout(this._cursorPauseTimer);
+    }
+    
+    this._cursorPauseTimer = setTimeout(() => {
+      this._startCursorBlink();
+      this._cursorPauseTimer = null;
+    }, this.CURSOR_PAUSE_DURATION);
   }
   
   /**
@@ -100,6 +146,8 @@ class App extends EventEmitter {
     
     // Initial render
     this._render();
+    
+    this._startCursorBlink();
     
     // Handle resize
     process.stdout.on('resize', this._onResize);
@@ -140,6 +188,7 @@ class App extends EventEmitter {
       if (this.state.get('menuOpen')) {
         this.state.set('menuOpen', null);
         this.renderer.closeMenu();
+        this._startCursorBlink();
         this._render();
         return;
       }
@@ -157,6 +206,7 @@ class App extends EventEmitter {
         // Would select menu item
         this.state.set('menuOpen', null);
         this.renderer.closeMenu();
+        this._startCursorBlink();
         this._render();
       }
       return;
@@ -232,15 +282,19 @@ class App extends EventEmitter {
     if (focus === 'editor') {
       if (keyName === 'return') {
         tab.buffer.insert('\n');
+        this._resetCursorBlink();
         this._render();
       } else if (keyName === 'backspace') {
         tab.buffer.backspace();
+        this._resetCursorBlink();
         this._render();
       } else if (keyName === 'delete') {
         tab.buffer.delete();
+        this._resetCursorBlink();
         this._render();
       } else if (keyName === 'tab') {
         tab.buffer.insert('  ');
+        this._resetCursorBlink();
         this._render();
       } else if (keyName === 'left') {
         tab.buffer.moveCursor(-1, 0);
@@ -277,6 +331,7 @@ class App extends EventEmitter {
       } else if ((ch && ch.length === 1) || (rawKeyName && rawKeyName.length === 1 && !key.ctrl && !key.alt)) {
         const charToInsert = (ch && ch.length === 1) ? ch : rawKeyName;
         tab.buffer.insert(charToInsert);
+        this._resetCursorBlink();
         this._render();
       }
     }
@@ -311,33 +366,142 @@ class App extends EventEmitter {
     if (!dialog) return;
 
     const value = dialog.value || '';
+    let cursorPos = dialog.cursorPos !== undefined ? dialog.cursorPos : value.length;
+    
+    logger.debug('dialog', 'Key pressed in dialog', {
+      keyName: keyName,
+      ch: ch,
+      chCode: ch ? ch.charCodeAt(0) : null,
+      currentValue: value,
+      cursorPos: cursorPos,
+      keyCtrl: key.ctrl,
+      keyAlt: key.alt
+    });
 
     if (keyName === 'escape') {
+      logger.debug('dialog', 'Escape pressed - closing dialog');
       this._resolveInputDialog(null);
       return;
     }
 
-    if (keyName === 'return') {
+    if (keyName === 'return' || keyName === 'enter') {
+      logger.debug('dialog', 'Enter/Return pressed', {
+        value: value,
+        dialogValueFromState: dialog.value
+      });
       this._resolveInputDialog(value);
       return;
     }
 
-    if (keyName === 'backspace') {
-      if (value.length > 0) {
+    if (keyName === 'left') {
+      if (cursorPos > 0) {
+        cursorPos--;
+        logger.debug('dialog', 'Left arrow - moving cursor', {
+          newCursorPos: cursorPos
+        });
         this.state.set('inputDialog', Object.assign({}, dialog, {
-          value: value.slice(0, -1)
+          cursorPos: cursorPos
         }));
         this._render();
       }
       return;
     }
 
-    if (!key.ctrl && !key.alt && ((ch && ch.length === 1) || (key.name && key.name.length === 1))) {
-      const charToInsert = (ch && ch.length === 1) ? ch : key.name;
-      this.state.set('inputDialog', Object.assign({}, dialog, {
-        value: value + charToInsert
-      }));
-      this._render();
+    if (keyName === 'right') {
+      if (cursorPos < value.length) {
+        cursorPos++;
+        logger.debug('dialog', 'Right arrow - moving cursor', {
+          newCursorPos: cursorPos
+        });
+        this.state.set('inputDialog', Object.assign({}, dialog, {
+          cursorPos: cursorPos
+        }));
+        this._render();
+      }
+      return;
+    }
+
+    if (keyName === 'home') {
+      if (cursorPos !== 0) {
+        logger.debug('dialog', 'Home key - moving to start');
+        this.state.set('inputDialog', Object.assign({}, dialog, {
+          cursorPos: 0
+        }));
+        this._render();
+      }
+      return;
+    }
+
+    if (keyName === 'end') {
+      if (cursorPos !== value.length) {
+        logger.debug('dialog', 'End key - moving to end');
+        this.state.set('inputDialog', Object.assign({}, dialog, {
+          cursorPos: value.length
+        }));
+        this._render();
+      }
+      return;
+    }
+
+    if (keyName === 'delete') {
+      if (cursorPos < value.length) {
+        const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);
+        logger.debug('dialog', 'Delete key pressed', {
+          oldValue: value,
+          newValue: newValue,
+          cursorPos: cursorPos
+        });
+        this.state.set('inputDialog', Object.assign({}, dialog, {
+          value: newValue
+        }));
+        this._resetCursorBlink();
+        this._render();
+      }
+      return;
+    }
+
+    if (keyName === 'backspace') {
+      if (cursorPos > 0) {
+        const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
+        const newCursorPos = cursorPos - 1;
+        logger.debug('dialog', 'Backspace pressed', {
+          oldValue: value,
+          newValue: newValue,
+          oldCursorPos: cursorPos,
+          newCursorPos: newCursorPos
+        });
+        this.state.set('inputDialog', Object.assign({}, dialog, {
+          value: newValue,
+          cursorPos: newCursorPos
+        }));
+        this._resetCursorBlink();
+        this._render();
+      }
+      return;
+    }
+
+    if (!key.ctrl && !key.alt && ch && ch.length === 1) {
+      const charCode = ch.charCodeAt(0);
+      
+      if (charCode >= 32 && charCode !== 127) {
+        const newValue = value.slice(0, cursorPos) + ch + value.slice(cursorPos);
+        const newCursorPos = cursorPos + 1;
+        logger.debug('dialog', 'Inserting character', {
+          char: ch,
+          charCode: charCode,
+          oldValue: value,
+          newValue: newValue,
+          oldCursorPos: cursorPos,
+          newCursorPos: newCursorPos
+        });
+        this.state.set('inputDialog', Object.assign({}, dialog, {
+          value: newValue,
+          cursorPos: newCursorPos
+        }));
+        this._resetCursorBlink();
+        this._render();
+      }
+      return;
     }
   }
   
@@ -380,6 +544,7 @@ class App extends EventEmitter {
       case 'menu_action':
         this.state.set('menuOpen', null);
         this.renderer.closeMenu();
+        this._startCursorBlink();
         this.executeAction(data);
         break;
       case 'search_next':
@@ -409,8 +574,10 @@ class App extends EventEmitter {
     if (this.state.get('menuOpen') === menuId) {
       this.state.set('menuOpen', null);
       this.renderer.closeMenu();
+      this._startCursorBlink();
     } else {
       this.state.set('menuOpen', menuId);
+      this._stopCursorBlink();
     }
     this._render();
   }
@@ -455,6 +622,7 @@ class App extends EventEmitter {
       filePath: tab ? tab.filePath : null,
       cursorLine: buffer ? buffer.cursor.line + 1 : 1,
       cursorCol: buffer ? buffer.cursor.col + 1 : 1,
+      cursorVisible: this.state.get('cursorVisible'),
     });
   }
   
@@ -920,11 +1088,31 @@ class App extends EventEmitter {
     }, 2500);
   }
 
+  _truncatePath(fullPath, maxLength = 60) {
+    if (fullPath.length <= maxLength) return fullPath;
+    const parts = fullPath.split(path.sep);
+    if (parts.length <= 3) return fullPath;
+    return `${parts[0]}${path.sep}...${path.sep}${parts[parts.length - 1]}`;
+  }
+
   _showInputDialog(dialog) {
+    const initialValue = dialog.value || '';
+    
+    logger.debug('dialog', 'Opening input dialog', {
+      title: dialog.title,
+      prompt: dialog.prompt,
+      value: initialValue,
+      hint: dialog.hint,
+      baseDir: dialog.baseDir
+    });
+    
     this.state.set('inputDialog', {
       title: dialog.title || 'Input',
       prompt: dialog.prompt || '',
-      value: dialog.value || '',
+      value: initialValue,
+      cursorPos: initialValue.length,
+      hint: dialog.hint || '',
+      baseDir: dialog.baseDir || null,
       callback: dialog.callback,
     });
     this._render();
@@ -932,30 +1120,70 @@ class App extends EventEmitter {
 
   _resolveInputDialog(value) {
     const dialog = this.state.get('inputDialog');
+    
+    logger.debug('dialog', 'Resolving dialog', {
+      value: value,
+      hasCallback: !!(dialog && dialog.callback),
+      dialogState: dialog
+    });
+    
     this.state.set('inputDialog', null);
     this._render();
     if (dialog && dialog.callback) {
+      logger.debug('dialog', 'Calling callback with value', { value: value });
       dialog.callback(value);
     }
   }
 
   _promptNewFile(baseDir) {
     const folder = baseDir || this.state.get('workingDirectory') || process.cwd();
-    const defaultPath = path.join(folder, 'new-file.txt');
+    const defaultFilename = 'new-file.txt';
+    
+    logger.debug('file', 'Prompting for new file', {
+      folder: folder,
+      defaultFilename: defaultFilename
+    });
+    
     this._showInputDialog({
       title: 'New File',
-      prompt: 'Enter full file path:',
-      value: defaultPath,
-      callback: async (filePath) => {
-        if (!filePath) return;
+      prompt: 'Enter filename:',
+      value: defaultFilename,
+      hint: `Creating in: ${this._truncatePath(folder)}`,
+      baseDir: folder,
+      callback: async (filename) => {
+        logger.debug('file', 'New file callback received', {
+          filename: filename,
+          filenameType: typeof filename,
+          filenameLength: filename ? filename.length : 0
+        });
+        
+        if (!filename) {
+          logger.debug('file', 'No filename provided, aborting');
+          return;
+        }
+        
+        const filePath = path.join(folder, filename);
+        
+        logger.debug('file', 'Creating new file', {
+          filename: filename,
+          folder: folder,
+          filePath: filePath
+        });
+        
         try {
           await writeFile(filePath, '');
+          logger.debug('file', 'File created successfully', { filePath: filePath });
           await this.openFile(filePath);
           this.state.set('focus', 'editor');
           this._showNotification('Created ' + filePath, 'success');
           this._refreshFileTree();
           this._render();
         } catch (err) {
+          logger.error('file', 'Failed to create file', {
+            filePath: filePath,
+            error: err.message,
+            errorCode: err.code
+          });
           this._showNotification('Failed to create file: ' + err.message, 'error');
         }
       }
@@ -964,13 +1192,16 @@ class App extends EventEmitter {
 
   _promptNewFolder(baseDir) {
     const folder = baseDir || this.state.get('workingDirectory') || process.cwd();
-    const defaultPath = path.join(folder, 'new-folder');
+    const defaultFoldername = 'new-folder';
     this._showInputDialog({
       title: 'New Folder',
-      prompt: 'Enter full folder path:',
-      value: defaultPath,
-      callback: async (folderPath) => {
-        if (!folderPath) return;
+      prompt: 'Enter folder name:',
+      value: defaultFoldername,
+      hint: `Creating in: ${this._truncatePath(folder)}`,
+      baseDir: folder,
+      callback: async (foldername) => {
+        if (!foldername) return;
+        const folderPath = path.join(folder, foldername);
         try {
           await fs.mkdir(folderPath, { recursive: true });
           this._showNotification('Created folder ' + folderPath, 'success');
@@ -989,14 +1220,20 @@ class App extends EventEmitter {
       return;
     }
 
+    const oldPath = tab.filePath;
+    const folder = path.dirname(oldPath);
+    const currentFilename = path.basename(oldPath);
+
     this._showInputDialog({
       title: 'Rename File',
-      prompt: 'Enter new full path:',
-      value: tab.filePath,
-      callback: async (newPath) => {
-        if (!newPath || newPath === tab.filePath) return;
+      prompt: 'Enter new filename:',
+      value: currentFilename,
+      hint: `Renaming in: ${this._truncatePath(folder)}`,
+      baseDir: folder,
+      callback: async (newFilename) => {
+        if (!newFilename || newFilename === currentFilename) return;
+        const newPath = path.join(folder, newFilename);
         try {
-          const oldPath = tab.filePath;
           await fs.rename(oldPath, newPath);
           tab.filePath = newPath;
           this._showNotification('Renamed to ' + newPath, 'success');
@@ -1154,6 +1391,17 @@ class App extends EventEmitter {
       clearTimeout(this._notificationTimer);
       this._notificationTimer = null;
     }
+    
+    if (this._cursorBlinkTimer) {
+      clearInterval(this._cursorBlinkTimer);
+      this._cursorBlinkTimer = null;
+    }
+    
+    if (this._cursorPauseTimer) {
+      clearTimeout(this._cursorPauseTimer);
+      this._cursorPauseTimer = null;
+    }
+    
     process.exit(0);
   }
 }

@@ -2,7 +2,7 @@
 
 /**
  * VSCode-style CLI Editor
- * Entry point
+ * Entr point
  */
 
 'use strict';

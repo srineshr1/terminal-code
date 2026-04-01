@@ -152,8 +152,10 @@ class BlessedRenderer {
     if (!this._initialized || !this.screen) return;
     
     this.state = state;
-    this.menuSelectedIndex = -1;
-    this.currentMenuItems = [];
+    if (!state.menuOpen) {
+      this.menuSelectedIndex = -1;
+      this.currentMenuItems = [];
+    }
     this._tabs = state.tabs || [];
 
     this._clearWidgets();
@@ -542,9 +544,13 @@ class BlessedRenderer {
       this.widgets[`line_${i}`] = lineContent;
     }
 
-    if (focused && buffer.cursor) {
+    const cursorVisible = this.state.cursorVisible !== false;
+    if (focused && buffer.cursor && cursorVisible) {
       const cursorScreenLine = buffer.cursor.line - scrollTop;
       if (cursorScreenLine >= 0 && cursorScreenLine < editorHeight) {
+        const line = buffer.lines[buffer.cursor.line] || '';
+        const charAtCursor = line[buffer.cursor.col] || ' ';
+        
         const cursor = blessed.box({
           parent: editor,
           top: cursorScreenLine,
@@ -553,7 +559,7 @@ class BlessedRenderer {
           height: 1,
           bg: rgb(theme.cursorBg),
           fg: rgb(theme.cursorFg),
-          content: ' ',
+          content: charAtCursor,
         });
         this.widgets.cursor = cursor;
       }
@@ -847,8 +853,14 @@ class BlessedRenderer {
     };
 
     const leftPos = menuPositions[menuId] || 0;
-    const dropdownWidth = 30;
-    const itemContentWidth = 28;
+    const menuWidths = {
+      file: 30,
+      edit: 30,
+      view: 30,
+      selection: 38
+    };
+    const dropdownWidth = menuWidths[menuId] || 30;
+    const itemContentWidth = dropdownWidth - 2;
 
     const dropdown = blessed.box({
       parent: this.screen,
@@ -1056,7 +1068,7 @@ class BlessedRenderer {
     const screenWidth = this.screen.width;
     const screenHeight = this.screen.height;
     const dialogWidth = Math.min(80, Math.max(56, screenWidth - 12));
-    const dialogHeight = 11;
+    const dialogHeight = 14;
     const dialogLeft = Math.floor((screenWidth - dialogWidth) / 2);
     const dialogTop = Math.floor((screenHeight - dialogHeight) / 2);
 
@@ -1091,7 +1103,7 @@ class BlessedRenderer {
       top: 0,
       left: 2,
       content: `{bold}${dialog.title || 'Input'}{/bold}`,
-      fg: rgb(theme.promptFg),
+      fg: rgb(theme.promptTitleFg),
       tags: true
     });
 
@@ -1101,14 +1113,28 @@ class BlessedRenderer {
       left: 2,
       width: dialogWidth - 4,
       content: dialog.prompt || '',
-      fg: rgb(theme.promptFg),
+      fg: rgb(theme.promptLabelFg),
       tags: false
     });
 
     const value = dialog.value || '';
+    const cursorPos = dialog.cursorPos !== undefined ? dialog.cursorPos : value.length;
     const maxInputWidth = dialogWidth - 8;
-    const visibleValue = value.length > maxInputWidth ? value.slice(value.length - maxInputWidth) : value;
-    const cursorChar = this.state.focus === 'editor' ? '_' : '_';
+    const cursorVisible = this.state.cursorVisible !== false;
+    
+    const charAtCursor = value[cursorPos] || ' ';
+    const beforeCursor = value.slice(0, cursorPos);
+    const afterCursor = value.slice(cursorPos + 1);
+    
+    const displayValue = cursorVisible
+      ? beforeCursor + 
+        `{#ffffff-bg}{#1e1e1e-fg}${charAtCursor}{/}{/}` +
+        afterCursor
+      : value;
+    
+    const visibleValue = displayValue.length > maxInputWidth 
+      ? displayValue.slice(displayValue.length - maxInputWidth) 
+      : displayValue;
 
     blessed.box({
       parent: dialogBox,
@@ -1116,21 +1142,31 @@ class BlessedRenderer {
       left: 2,
       width: dialogWidth - 4,
       height: 3,
-      border: { type: 'line', fg: rgb(theme.promptBorderFg) },
-      bg: rgb(theme.editorBg),
+      border: { type: 'line', fg: rgb(theme.promptInputBorderFg) },
+      bg: rgb(theme.promptInputBg),
       fg: rgb(theme.editorFg),
-      content: ` ${visibleValue}${cursorChar}`,
-      tags: false
+      content: ` ${visibleValue}`,
+      tags: true
     });
+
+    if (dialog.hint) {
+      blessed.text({
+        parent: dialogBox,
+        top: 8,
+        left: 2,
+        width: dialogWidth - 4,
+        content: dialog.hint,
+        fg: rgb(theme.promptHintFg),
+        tags: false
+      });
+    }
 
     blessed.text({
       parent: dialogBox,
-      top: 8,
-      left: Math.floor((dialogWidth - 24) / 2),
-      content: '[ Enter ]   [ Esc ]',
-      fg: rgb(theme.promptFg),
-      bg: rgb(theme.promptBg),
-      tags: false
+      top: 11,
+      left: Math.floor((dialogWidth - 30) / 2),
+      content: '{#007ACC-fg}[{/} {white-fg}Enter{/white-fg} {#007ACC-fg}]{/}   {#007ACC-fg}[{/} {white-fg}Esc{/white-fg} {#007ACC-fg}]{/}',
+      tags: true
     });
 
     this.widgets.inputDialogOverlay = overlay;

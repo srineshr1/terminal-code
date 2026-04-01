@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 const { resolveSafePath, isDirSafe, isFileSafe, mkdirSafe, removeSafe } = require('./fileSystem');
 
 /**
- * Create a new file at the given path.
+ * Create a new file at the given path
  * If the file already exists, it will be overwritten (or we can throw? We'll overwrite for simplicity).
  * @param {string} filePath - The path of the file to create (relative to baseDir or absolute).
  * @param {string} [content=''] - The initial content of the file.
