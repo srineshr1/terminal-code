@@ -860,11 +860,13 @@ class BlessedRenderer {
   }
 
   _buildStatusBar(state) {
+    const sidebarWidth = state.showExplorer ? 30 : 0;
+    
     const statusBar = blessed.box({
       parent: this.screen,
       bottom: 0,
-      left: 0,
-      width: '100%',
+      left: sidebarWidth,
+      width: `100%-${sidebarWidth}`,
       height: 1,
       bg: rgb(theme.statusBarBg),
       fg: rgb(theme.statusBarFg),
