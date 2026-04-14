@@ -18,8 +18,12 @@ npm test                            # Placeholder only
 # npx jest -t "test name"            # Run specific test by name
 
 # Debug
-tail -f editor.log                  # Watch debug logs (real-time)
 node --inspect index.js <filepath>  # Node debugger
+
+Logger (src/utils/logger.js):
+- Default: DEBUG level, file enabled, console disabled
+- Logs to ./editor.log
+- Set LOG_LEVELS in code or use logger.setLevel('INFO')
 ```
 
 ## Architecture
@@ -145,10 +149,20 @@ npx jest -t "test name"      # Run specific test by name
 ## Debugging
 
 ```javascript
-const logger = require('./utils/logger');
+const logger = require('./src/utils/logger');
 logger.debug('category', 'message', { data });
 ```
-Logs written to `./editor.log`.
+Logger (src/utils/logger.js):
+- Default: DEBUG level, file enabled, console disabled
+- Logs to ./editor.log
+- Use logger.setLevel('INFO') to reduce verbosity
+
+## Entry Point
+
+index.js handles terminal init/exit escape sequences - don't remove these:
+- `'\x1b[?1049h'` - alternate screen buffer
+- `'\x1b[?25l'` - hide cursor
+- Cleanup on exit: `'\x1b[?1049l'\x1b[?25h'`
 
 ## Dependencies
 - **blessed** (^0.1.81): Terminal UI rendering

@@ -1,7 +1,7 @@
 'use strict';
 
 const theme = {
-  name: 'tokyonight',
+  name: 'one-dark',
 
   // Menu bar - darker background
   menuBarBg: [22, 22, 30],          // #16161e
@@ -89,21 +89,21 @@ const theme = {
   promptButtonFg: [192, 202, 245],  // #c0caf5
   promptButtonBg: [59, 66, 97],     // #3b4261
 
-  // Syntax highlighting - Tokyo Night colors
+  // Syntax highlighting - One Dark colors
   syntax: {
-    keyword: [157, 124, 216],       // #9d7cd8 - Purple (control flow: if, for, return)
-    string: [158, 206, 106],        // #9ece6a - Green
-    number: [255, 158, 100],        // #ff9e64 - Orange
-    comment: [86, 95, 137],         // #565f89 - Muted gray-blue
-    function: [122, 162, 247],      // #7aa2f7 - Blue
-    type: [42, 195, 222],           // #2ac3de - Cyan
-    constant: [255, 158, 100],      // #ff9e64 - Orange
-    operator: [137, 221, 255],      // #89ddff - Light cyan
-    punctuation: [169, 177, 214],   // #a9b1d6 - Light gray
-    variable: [192, 202, 245],      // #c0caf5 - White/light
-    tag: [247, 118, 142],           // #f7768e - Red/pink (HTML tags)
-    attribute: [187, 154, 247],     // #bb9af7 - Light purple
-    property: [115, 218, 202],      // #73daca - Teal
+    keyword: [166, 38, 164],       // #a626a4 - Purple
+    string: [80, 161, 79],         // #50a14f - Green
+    number: [193, 132, 1],         // #c18401 - Yellow
+    comment: [160, 161, 167],      // #a0a1a7 - Gray
+    function: [64, 120, 242],      // #4078f2 - Blue
+    type: [193, 132, 1],           // #c18401 - Yellow
+    constant: [193, 132, 1],       // #c18401 - Yellow
+    operator: [1, 132, 188],       // #0184bc - Cyan
+    punctuation: [160, 161, 167],  // #a0a1a7 - Gray
+    variable: [229, 192, 123],    // #e5c07b - Light
+    tag: [228, 86, 73],            // #e45649 - Red
+    attribute: [80, 161, 79],      // #50a14f - Green
+    property: [1, 132, 188],       // #0184bc - Cyan
   },
 };
 
