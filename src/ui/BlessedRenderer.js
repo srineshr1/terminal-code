@@ -8,6 +8,7 @@
 const blessed = require('blessed');
 const theme = require('./themes/default');
 const Syntax = require('../editor/Syntax');
+const SelectionUtil = require('../editor/Selection');
 
 function rgb(arr) {
   if (!arr) return 'white';
@@ -21,6 +22,11 @@ function rgb(arr) {
   const g = Math.max(0, Math.min(255, Math.round(arr[1])));
   const b = Math.max(0, Math.min(255, Math.round(arr[2])));
   return '#' + r.toString(16).padStart(2, '0') + g.toString(16).padStart(2, '0') + b.toString(16).padStart(2, '0');
+}
+
+function escapeBlessed(s) {
+  if (!s) return '';
+  return s.replace(/\{/g, '{open}').replace(/\}/g, '{close}');
 }
 
 function stripAnsi(text) {
@@ -46,6 +52,7 @@ class BlessedRenderer {
     this.currentMenuItems = [];
     this._initialized = false;
     this._tabs = [];
+    this._drag = { active: false, mode: 'char', startLine: 0, startCol: 0, lastClickAt: 0, lastClickLine: -1, lastClickCol: -1, clickCount: 0 };
   }
 
   init() {
@@ -60,20 +67,25 @@ class BlessedRenderer {
     });
 
     this.screen.enableMouse();
+    if (this.screen.program && typeof this.screen.program.setMouse === 'function') {
+      try {
+        this.screen.program.setMouse({ cellMotion: true, sgrMouse: true }, true);
+      } catch (e) {}
+    }
     this._initialized = true;
 
     this.screen.on('mouse', (event) => {
-      if (event.action === 'mousedown' || event.action === 'click') {
-        this._handleEditorClick(event);
+      if (event.action === 'wheelup' || event.action === 'wheeldown') {
+        const dir = event.action === 'wheelup' ? -1 : 1;
+        const sidebarWidth = this.state.showExplorer ? 30 : 0;
+        if (sidebarWidth > 0 && event.x < sidebarWidth) {
+          this.onClick('sidebar_scroll', dir * 3);
+        } else {
+          this.onScroll(dir);
+        }
+        return;
       }
-    });
-    
-    this.screen.on('wheelup', () => {
-      this.onScroll(-1);
-    });
-    
-    this.screen.on('wheeldown', () => {
-      this.onScroll(1);
+      this._handleMouseEvent(event);
     });
 
     this.screen.on('keypress', (ch, key) => {
@@ -201,12 +213,14 @@ class BlessedRenderer {
   _clearWidgets() {
     for (const key of Object.keys(this.widgets)) {
       const widget = this.widgets[key];
-      if (widget && widget.detach) {
-        try {
+      if (!widget) continue;
+      try {
+        if (typeof widget.destroy === 'function') {
+          widget.destroy();
+        } else if (typeof widget.detach === 'function') {
           widget.detach();
-        } catch (e) {
         }
-      }
+      } catch (e) {}
     }
     this.widgets = {};
   }
@@ -388,18 +402,25 @@ class BlessedRenderer {
       top: 0,
       left: 0,
       width: sidebarWidth,
-      height: 5,
+      height: 4,
       content: '\n' +
-        '    {cyan-fg}╭───╮{/cyan-fg}\n' +
-        '    {cyan-fg}│{/cyan-fg}{bold}{white-fg}TC{/white-fg}{/bold}{cyan-fg}│{/cyan-fg}  {bold}Terminal Code{/bold}\n' +
-        '    {cyan-fg}╰───╯{/cyan-fg}',
+        '  {#7aa2f7-fg}{bold}◆{/bold}{/} {#c0caf5-fg}{bold}TERMINAL{/bold}{/}\n' +
+        '    {#7dcfff-fg}{bold}CODE{/bold}{/}',
       tags: true,
       style: { transparent: true },
     });
 
     this._sidebarLastClick = { index: -1, time: 0 };
 
-    for (let i = 0; i < fileTree.length; i++) {
+    const logoHeight = 4;
+    const sidebarBodyHeight = Math.max(1, this.screen.height - 2 - logoHeight);
+    const scrollOffset = Math.max(0, Math.min(
+      this.state.fileTreeScrollOffset || 0,
+      Math.max(0, fileTree.length - sidebarBodyHeight)
+    ));
+    const visibleEnd = Math.min(fileTree.length, scrollOffset + sidebarBodyHeight);
+
+    for (let i = scrollOffset; i < visibleEnd; i++) {
       const file = fileTree[i];
       const isSelected = i === selectedIndex;
       const icon = file.isDirectory ? (file.expanded ? '▼ ' : '▸ ') : '';
@@ -424,7 +445,7 @@ class BlessedRenderer {
       
       const item = blessed.text({
         parent: sidebar,
-        top: i + 5,
+        top: (i - scrollOffset) + logoHeight,
         left: 1,
         width: sidebarWidth - 2,
         content: content,
@@ -462,6 +483,41 @@ class BlessedRenderer {
       });
 
       this.widgets[`file_${i}`] = item;
+    }
+
+    sidebar.on('wheelup', () => {
+      this.onClick('sidebar_scroll', -3);
+    });
+    sidebar.on('wheeldown', () => {
+      this.onClick('sidebar_scroll', 3);
+    });
+
+    if (fileTree.length > sidebarBodyHeight) {
+      const sbHeight = sidebarBodyHeight;
+      const ratio = sbHeight / fileTree.length;
+      const thumbH = Math.max(1, Math.floor(sbHeight * ratio));
+      const maxScroll = fileTree.length - sbHeight;
+      const thumbTop = maxScroll > 0
+        ? Math.floor((scrollOffset / maxScroll) * (sbHeight - thumbH))
+        : 0;
+      let sbContent = '';
+      for (let k = 0; k < sbHeight; k++) {
+        const isThumb = (k >= thumbTop && k < thumbTop + thumbH);
+        sbContent += isThumb ? '█' : '│';
+        if (k < sbHeight - 1) sbContent += '\n';
+      }
+      const sb = blessed.box({
+        parent: sidebar,
+        top: logoHeight,
+        left: sidebarWidth - 1,
+        width: 1,
+        height: sbHeight,
+        content: sbContent,
+        bg: rgb(theme.scrollbarBg),
+        fg: rgb(theme.scrollbarThumbBg),
+        tags: false,
+      });
+      this.widgets.sidebarScrollbar = sb;
     }
 
     this.widgets.sidebar = sidebar;
@@ -514,32 +570,21 @@ class BlessedRenderer {
         tags: false,
       });
 
-      let lineContent;
-      if (tokenizedLines && language) {
-        const tokens = tokenizedLines[lineIndex];
-        const coloredContent = this._buildColoredLine(tokens);
-        lineContent = blessed.text({
-          parent: editor,
-          top: i,
-          left: gutterWidth,
-          width: contentWidth,
-          content: coloredContent,
-          fg: rgb(theme.editorFg),
-          bg: rgb(theme.editorBg),
-          tags: true,
-        });
-      } else {
-        lineContent = blessed.text({
-          parent: editor,
-          top: i,
-          left: gutterWidth,
-          width: contentWidth,
-          content: displayLine,
-          fg: rgb(theme.editorFg),
-          bg: rgb(theme.editorBg),
-          tags: false,
-        });
-      }
+      const tokens = tokenizedLines ? tokenizedLines[lineIndex] : null;
+      const selectionRanges = this._selectionRangesForLine(buffer, lineIndex);
+      const searchHits = this._searchHitsForLine(this.state, lineIndex);
+      const bracketHits = this._bracketHitsForLine(this.state, lineIndex);
+      const content = this._buildLineContent(cleanLine, tokens, selectionRanges, searchHits, bracketHits);
+      const lineContent = blessed.text({
+        parent: editor,
+        top: i,
+        left: gutterWidth,
+        width: contentWidth,
+        content: content,
+        fg: rgb(theme.editorFg),
+        bg: rgb(theme.editorBg),
+        tags: true,
+      });
 
       this.widgets[`line_${i}`] = lineContent;
     }
@@ -550,7 +595,7 @@ class BlessedRenderer {
       if (cursorScreenLine >= 0 && cursorScreenLine < editorHeight) {
         const line = buffer.lines[buffer.cursor.line] || '';
         const charAtCursor = line[buffer.cursor.col] || ' ';
-        
+
         const cursor = blessed.box({
           parent: editor,
           top: cursorScreenLine,
@@ -562,6 +607,27 @@ class BlessedRenderer {
           content: charAtCursor,
         });
         this.widgets.cursor = cursor;
+      }
+
+      if (buffer.extraCursors && buffer.extraCursors.length) {
+        for (let ci = 0; ci < buffer.extraCursors.length; ci++) {
+          const ec = buffer.extraCursors[ci];
+          const sl = ec.cursor.line - scrollTop;
+          if (sl < 0 || sl >= editorHeight) continue;
+          const ln = buffer.lines[ec.cursor.line] || '';
+          const ch = ln[ec.cursor.col] || ' ';
+          const eb = blessed.box({
+            parent: editor,
+            top: sl,
+            left: gutterWidth + ec.cursor.col,
+            width: 1,
+            height: 1,
+            bg: rgb(theme.cursorBg),
+            fg: rgb(theme.cursorFg),
+            content: ch,
+          });
+          this.widgets[`extraCursor_${ci}`] = eb;
+        }
       }
     } else if (this.widgets.cursor) {
       delete this.widgets.cursor;
@@ -824,13 +890,142 @@ class BlessedRenderer {
     let result = '';
     for (const token of tokens) {
       const color = this._getTokenColor(token.type);
+      const txt = escapeBlessed(token.text);
       if (color) {
-        result += `{${color}-fg}${token.text}{/${color}-fg}`;
+        result += `{${color}-fg}${txt}{/${color}-fg}`;
       } else {
-        result += token.text;
+        result += txt;
       }
     }
     return result;
+  }
+
+  /**
+   * Compute selection ranges intersecting a given line index.
+   * Returns array of { startCol, endCol } in column positions.
+   */
+  _bracketHitsForLine(state, lineIndex) {
+    if (!state || !Array.isArray(state.bracketMatch) || state.bracketMatch.length !== 2) return null;
+    const out = [];
+    for (const p of state.bracketMatch) {
+      if (p && p.line === lineIndex) out.push({ startCol: p.col, endCol: p.col + 1 });
+    }
+    return out.length ? out : null;
+  }
+
+  _searchHitsForLine(state, lineIndex) {
+    if (!state || !Array.isArray(state.searchMatches)) return null;
+    const out = [];
+    const cur = state.searchCurrentIndex;
+    for (let i = 0; i < state.searchMatches.length; i++) {
+      const m = state.searchMatches[i];
+      if (!m || m.line !== lineIndex) continue;
+      out.push({ startCol: m.startCol, endCol: m.endCol, current: i === cur });
+    }
+    return out.length ? out : null;
+  }
+
+  _selectionRangesForLine(buffer, lineIndex) {
+    const ranges = [];
+    const all = buffer.getAllCursors ? buffer.getAllCursors() : [{ selection: buffer.selection }];
+    for (const c of all) {
+      if (!c.selection) continue;
+      const seg = SelectionUtil.intersectionForLine(c.selection, lineIndex);
+      if (!seg) continue;
+      const lineLen = (buffer.lines[lineIndex] || '').length;
+      const startCol = Math.max(0, Math.min(seg.startCol, lineLen));
+      let endCol;
+      if (seg.endCol === Infinity) endCol = lineLen + 1; // include EOL marker
+      else endCol = Math.max(0, Math.min(seg.endCol, lineLen));
+      if (endCol > startCol) ranges.push({ startCol, endCol });
+    }
+    ranges.sort((a, b) => a.startCol - b.startCol);
+    const merged = [];
+    for (const r of ranges) {
+      if (merged.length && r.startCol <= merged[merged.length - 1].endCol) {
+        merged[merged.length - 1].endCol = Math.max(merged[merged.length - 1].endCol, r.endCol);
+      } else {
+        merged.push({ ...r });
+      }
+    }
+    return merged;
+  }
+
+  /**
+   * Build colored content with selection highlighting baked in.
+   * If tokens is null, falls back to plain text with selection bg.
+   */
+  _buildLineContent(rawLine, tokens, selectionRanges, searchHits, bracketHits) {
+    const text = (rawLine || '').substring(0, 1000);
+    const len = text.length;
+    const selBg = rgb(theme.selectionBg);
+    const matchBg = rgb(theme.searchMatchBg);
+    const curBg = rgb(theme.searchCurrentBg);
+    const bracketBg = rgb([60, 70, 100]);
+    // Build per-column bg map
+    const bgMap = new Array(len + 1).fill(null);
+    if (bracketHits) {
+      for (const h of bracketHits) {
+        const s = Math.max(0, h.startCol);
+        const e = Math.min(len + 1, h.endCol);
+        for (let i = s; i < e; i++) bgMap[i] = bracketBg;
+      }
+    }
+    if (searchHits) {
+      for (const h of searchHits) {
+        const tag = h.current ? curBg : matchBg;
+        const s = Math.max(0, h.startCol);
+        const e = Math.min(len + 1, h.endCol);
+        for (let i = s; i < e; i++) bgMap[i] = tag;
+      }
+    }
+    if (selectionRanges) {
+      for (const r of selectionRanges) {
+        const s = Math.max(0, r.startCol);
+        const e = Math.min(len + 1, r.endCol);
+        for (let i = s; i < e; i++) bgMap[i] = selBg;
+      }
+    }
+    // If no tokens, walk per-column
+    if (!tokens) {
+      let out = '';
+      let i = 0;
+      while (i < len) {
+        const bg = bgMap[i];
+        let j = i;
+        while (j < len && bgMap[j] === bg) j++;
+        const seg = escapeBlessed(text.substring(i, j));
+        if (bg) out += `{${bg}-bg}${seg}{/${bg}-bg}`;
+        else out += seg;
+        i = j;
+      }
+      // Trailing selection past EOL
+      if (bgMap[len]) out += `{${bgMap[len]}-bg} {/${bgMap[len]}-bg}`;
+      return out;
+    }
+    // With tokens: each token has color, may need splitting on bg boundaries
+    let out = '';
+    let col = 0;
+    for (const token of tokens) {
+      const color = this._getTokenColor(token.type);
+      const tlen = token.text.length;
+      let i = 0;
+      while (i < tlen) {
+        const absCol = col + i;
+        const bg = bgMap[absCol];
+        let j = i;
+        while (j < tlen && bgMap[col + j] === bg) j++;
+        const seg = escapeBlessed(token.text.substring(i, j));
+        let piece = seg;
+        if (color) piece = `{${color}-fg}${piece}{/${color}-fg}`;
+        if (bg) piece = `{${bg}-bg}${piece}{/${bg}-bg}`;
+        out += piece;
+        i = j;
+      }
+      col += tlen;
+    }
+    if (bgMap[col]) out += `{${bgMap[col]}-bg} {/${bgMap[col]}-bg}`;
+    return out;
   }
 
   _getTokenColor(tokenType) {
@@ -1393,6 +1588,45 @@ class BlessedRenderer {
     }
   }
 
+  setCursorVisible(visible, buffer) {
+    if (!this._initialized || !this.screen) return;
+    const editor = this.widgets.editor;
+
+    if (this.widgets.cursor) {
+      try { this.widgets.cursor.destroy(); } catch (e) {}
+      this.widgets.cursor = null;
+    }
+
+    if (!visible || !editor || !buffer || !buffer.cursor) {
+      this.screen.render();
+      return;
+    }
+
+    const sidebarWidth = this.state.showExplorer ? 30 : 0;
+    const editorHeight = this.screen.height - 3;
+    const scrollTop = buffer.scrollTop || 0;
+    const cursorScreenLine = buffer.cursor.line - scrollTop;
+    if (cursorScreenLine < 0 || cursorScreenLine >= editorHeight) {
+      this.screen.render();
+      return;
+    }
+    const gutterWidth = String(buffer.lines.length).length + 2;
+    const line = buffer.lines[buffer.cursor.line] || '';
+    const charAtCursor = line[buffer.cursor.col] || ' ';
+    const cursor = blessed.box({
+      parent: editor,
+      top: cursorScreenLine,
+      left: gutterWidth + buffer.cursor.col,
+      width: 1,
+      height: 1,
+      bg: rgb(theme.cursorBg),
+      fg: rgb(theme.cursorFg),
+      content: charAtCursor,
+    });
+    this.widgets.cursor = cursor;
+    this.screen.render();
+  }
+
   closeMenu() {
     if (this.widgets.dropdown) {
       try {
@@ -1422,27 +1656,100 @@ class BlessedRenderer {
     }
   }
 
-  _handleEditorClick(event) {
+  _editorHitTest(event) {
     const { x, y } = event;
     const sidebarWidth = this.state.showExplorer ? 30 : 0;
     const editorTop = 2;
     const editorBottom = this.screen.height - 3;
-    
-    if (y < editorTop || y >= editorBottom) return;
-    if (x < sidebarWidth) return;
-    
+    if (y < editorTop || y >= editorBottom) return null;
+    if (x < sidebarWidth) return null;
     const buffer = this.state.buffer;
-    if (!buffer || !buffer.lines) return;
-    
+    if (!buffer || !buffer.lines) return null;
     const gutterWidth = String(buffer.lines.length).length + 2;
     const line = (y - editorTop) + (buffer.scrollTop || 0);
     const col = x - sidebarWidth - gutterWidth;
-    
-    if (line >= 0 && line < buffer.lines.length) {
-      const maxCol = buffer.lines[line].length;
-      const clampedCol = Math.max(0, Math.min(col, maxCol));
-      this.onClick('editor_click', { line, col: clampedCol });
+    if (line < 0 || line >= buffer.lines.length) return null;
+    const maxCol = buffer.lines[line].length;
+    const clampedCol = Math.max(0, Math.min(col, maxCol));
+    const inGutter = (x - sidebarWidth) < gutterWidth;
+    return { line, col: clampedCol, inGutter };
+  }
+
+  _handleMouseEvent(event) {
+    if (event.action === 'mousedown' && event.button && event.button !== 'left') return;
+    const hit = this._editorHitTest(event);
+    if (!hit) return;
+
+    if (event.action === 'mousedown') {
+      const now = Date.now();
+      const dt = now - this._drag.lastClickAt;
+      const samePos = (hit.line === this._drag.lastClickLine && Math.abs(hit.col - this._drag.lastClickCol) <= 1);
+      if (dt < 350 && samePos) this._drag.clickCount++;
+      else this._drag.clickCount = 1;
+      this._drag.lastClickAt = now;
+      this._drag.lastClickLine = hit.line;
+      this._drag.lastClickCol = hit.col;
+      this._drag.didMove = false;
+
+      if (hit.inGutter) {
+        this._drag.active = true;
+        this._drag.mode = 'gutter';
+        this._drag.startLine = hit.line;
+        this._drag.startCol = 0;
+        this.onClick('gutter_click', { line: hit.line });
+        return;
+      }
+
+      if (event.shift) {
+        this.onClick('editor_shift_click', { line: hit.line, col: hit.col });
+        this._drag.active = true;
+        this._drag.mode = 'char';
+        return;
+      }
+      if (event.ctrl) {
+        this.onClick('editor_ctrl_click', { line: hit.line, col: hit.col });
+        return;
+      }
+      if (this._drag.clickCount === 2) {
+        this.onClick('editor_double_click', { line: hit.line, col: hit.col });
+        this._drag.active = true;
+        this._drag.mode = 'word';
+        return;
+      }
+      if (this._drag.clickCount >= 3) {
+        this.onClick('editor_triple_click', { line: hit.line, col: hit.col });
+        this._drag.active = true;
+        this._drag.mode = 'line';
+        return;
+      }
+      this._drag.active = true;
+      this._drag.mode = 'char';
+      this._drag.startLine = hit.line;
+      this._drag.startCol = hit.col;
+      this.onClick('editor_drag_start', { line: hit.line, col: hit.col });
+      return;
     }
+
+    if (event.action === 'mousemove' || event.action === 'mousedrag' || event.action === 'drag') {
+      if (!this._drag.active) return;
+      this._drag.didMove = true;
+      if (this._drag.mode === 'gutter') {
+        this.onClick('gutter_drag', { startLine: this._drag.startLine, line: hit.line });
+      } else {
+        this.onClick('editor_drag_move', { line: hit.line, col: hit.col, mode: this._drag.mode });
+      }
+      return;
+    }
+
+    if (event.action === 'mouseup') {
+      if (this._drag.active) {
+        this.onClick('editor_drag_end', { line: hit.line, col: hit.col });
+        this._drag.active = false;
+      }
+      return;
+    }
+
+    // Suppress redundant 'click' that follows mouseup — drag_start already set cursor.
   }
 
   destroy() {

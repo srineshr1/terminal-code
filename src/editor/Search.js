@@ -94,6 +94,58 @@ class Search {
   get count() {
     return this.results.length;
   }
+
+  /**
+   * Run a search on lines and return matches in renderer format.
+   * Returns array of { line, startCol, endCol }.
+   */
+  findAll(lines, query, opts = {}) {
+    if (!query) { this.clear(); return []; }
+    const caseSensitive = !!opts.caseSensitive;
+    const out = [];
+    const needle = caseSensitive ? query : query.toLowerCase();
+    for (let li = 0; li < lines.length; li++) {
+      const raw = lines[li] || '';
+      const hay = caseSensitive ? raw : raw.toLowerCase();
+      let from = 0;
+      while (from <= hay.length - needle.length) {
+        const idx = hay.indexOf(needle, from);
+        if (idx === -1) break;
+        out.push({ line: li, startCol: idx, endCol: idx + query.length });
+        from = idx + Math.max(1, query.length);
+      }
+    }
+    this.query = query;
+    this.results = out.map(m => ({ line: m.line, col: m.startCol, length: m.endCol - m.startCol }));
+    this.currentIndex = out.length ? 0 : -1;
+    return out;
+  }
+
+  /**
+   * Replace all occurrences in buffer.
+   * Returns number replaced.
+   */
+  replaceAll(buffer, query, replacement, opts = {}) {
+    if (!query) return 0;
+    const caseSensitive = !!opts.caseSensitive;
+    let total = 0;
+    for (let li = 0; li < buffer.lines.length; li++) {
+      const orig = buffer.lines[li];
+      let result = '';
+      let i = 0;
+      const needle = caseSensitive ? query : query.toLowerCase();
+      const hay = caseSensitive ? orig : orig.toLowerCase();
+      while (i < orig.length) {
+        const idx = hay.indexOf(needle, i);
+        if (idx === -1) { result += orig.slice(i); break; }
+        result += orig.slice(i, idx) + replacement;
+        i = idx + query.length;
+        total++;
+      }
+      buffer.lines[li] = result;
+    }
+    return total;
+  }
 }
 
 module.exports = Search;

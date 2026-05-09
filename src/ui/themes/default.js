@@ -53,8 +53,8 @@ const theme = {
   editorFg: [192, 202, 245],        // #c0caf5
   gutterBg: [26, 27, 38],           // #1a1b26
   gutterFg: [59, 66, 97],           // #3b4261
-  selectionBg: [40, 52, 87],        // #283457
-  selectionFg: [192, 202, 245],     // #c0caf5
+  selectionBg: [61, 89, 161],       // #3d59a1 - brighter blue, clearly visible
+  selectionFg: [255, 255, 255],
   cursorBg: [192, 202, 245],        // #c0caf5
   cursorFg: [26, 27, 38],           // #1a1b26
 
@@ -89,21 +89,21 @@ const theme = {
   promptButtonFg: [192, 202, 245],  // #c0caf5
   promptButtonBg: [59, 66, 97],     // #3b4261
 
-  // Syntax highlighting - One Dark colors
+  // Syntax highlighting - Tokyo Night vivid palette
   syntax: {
-    keyword: [166, 38, 164],       // #a626a4 - Purple
-    string: [80, 161, 79],         // #50a14f - Green
-    number: [193, 132, 1],         // #c18401 - Yellow
-    comment: [160, 161, 167],      // #a0a1a7 - Gray
-    function: [64, 120, 242],      // #4078f2 - Blue
-    type: [193, 132, 1],           // #c18401 - Yellow
-    constant: [193, 132, 1],       // #c18401 - Yellow
-    operator: [1, 132, 188],       // #0184bc - Cyan
-    punctuation: [160, 161, 167],  // #a0a1a7 - Gray
-    variable: [229, 192, 123],    // #e5c07b - Light
-    tag: [228, 86, 73],            // #e45649 - Red
-    attribute: [80, 161, 79],      // #50a14f - Green
-    property: [1, 132, 188],       // #0184bc - Cyan
+    keyword: [187, 154, 247],      // #bb9af7 - Purple
+    string: [158, 206, 106],       // #9ece6a - Green
+    number: [255, 158, 100],       // #ff9e64 - Orange
+    comment: [86, 95, 137],        // #565f89 - Muted blue-gray
+    function: [122, 162, 247],     // #7aa2f7 - Blue
+    type: [42, 195, 222],          // #2ac3de - Cyan
+    constant: [255, 158, 100],     // #ff9e64 - Orange
+    operator: [137, 221, 255],     // #89ddff - Light cyan
+    punctuation: [192, 202, 245],  // #c0caf5 - Foreground
+    variable: [192, 202, 245],     // #c0caf5 - Foreground
+    tag: [247, 118, 142],          // #f7768e - Red/pink
+    attribute: [224, 175, 104],    // #e0af68 - Yellow
+    property: [125, 207, 255],     // #7dcfff - Sky cyan
   },
 };
 

@@ -12,16 +12,96 @@ class Buffer {
     this.selection = null; // { anchor: {line, col}, head: {line, col} }
     this.scrollTop = 0;
     this.scrollLeft = 0;
+    this.extraCursors = []; // [{ cursor: {line, col}, selection: null | { anchor, head } }]
   }
-  
+
   // === BUFFER MANAGEMENT ===
-  
+
   setLines(lines) {
     this.lines = Array.isArray(lines) ? lines : [''];
     this.cursor = { line: 0, col: 0 };
     this.selection = null;
     this.scrollTop = 0;
     this.scrollLeft = 0;
+    this.extraCursors = [];
+  }
+
+  // === MULTI-CURSOR HELPERS ===
+
+  getAllCursors() {
+    const all = [{ cursor: this.cursor, selection: this.selection, primary: true }];
+    for (const ec of this.extraCursors) {
+      all.push({ cursor: ec.cursor, selection: ec.selection, primary: false });
+    }
+    return all;
+  }
+
+  clearExtraCursors() {
+    this.extraCursors = [];
+  }
+
+  hasMultipleCursors() {
+    return this.extraCursors.length > 0;
+  }
+
+  /**
+   * Find word boundary in a direction at given pos.
+   * dir = -1 for left, +1 for right.
+   * Returns { line, col }.
+   */
+  findWordBoundary(dir, line, col) {
+    const isWord = (ch) => /[A-Za-z0-9_]/.test(ch || '');
+    let l = line, c = col;
+    if (dir < 0) {
+      if (c === 0) {
+        if (l > 0) return { line: l - 1, col: this.lines[l - 1].length };
+        return { line: 0, col: 0 };
+      }
+      c--;
+      const text = this.lines[l] || '';
+      while (c > 0 && /\s/.test(text[c])) c--;
+      while (c > 0 && isWord(text[c - 1])) c--;
+      if (c === col - 1 && !isWord(text[c])) c--;
+      return { line: l, col: Math.max(0, c) };
+    } else {
+      const text = this.lines[l] || '';
+      if (c >= text.length) {
+        if (l < this.lines.length - 1) return { line: l + 1, col: 0 };
+        return { line: l, col: text.length };
+      }
+      let cc = c;
+      if (isWord(text[cc])) {
+        while (cc < text.length && isWord(text[cc])) cc++;
+      } else {
+        while (cc < text.length && !isWord(text[cc]) && !/\s/.test(text[cc])) cc++;
+      }
+      while (cc < text.length && /\s/.test(text[cc])) cc++;
+      return { line: l, col: cc };
+    }
+  }
+
+  /**
+   * Select the word at the given location.
+   */
+  selectWordAt(line, col) {
+    const text = this.lines[line] || '';
+    const isWord = (ch) => /[A-Za-z0-9_]/.test(ch || '');
+    if (text.length === 0) {
+      this.setSelection(line, 0, line, 0);
+      this.cursor.line = line; this.cursor.col = 0;
+      return;
+    }
+    let s = Math.min(col, text.length - 1);
+    let e = s;
+    if (!isWord(text[s])) {
+      this.setSelection(line, s, line, Math.min(text.length, s + 1));
+      this.cursor.line = line; this.cursor.col = Math.min(text.length, s + 1);
+      return;
+    }
+    while (s > 0 && isWord(text[s - 1])) s--;
+    while (e < text.length && isWord(text[e])) e++;
+    this.setSelection(line, s, line, e);
+    this.cursor.line = line; this.cursor.col = e;
   }
   
   // === BASIC ACCESSORS ===
@@ -635,9 +715,16 @@ class Buffer {
       } : null,
       scrollTop: this.scrollTop,
       scrollLeft: this.scrollLeft,
+      extraCursors: this.extraCursors.map(ec => ({
+        cursor: { ...ec.cursor },
+        selection: ec.selection ? {
+          anchor: { ...ec.selection.anchor },
+          head: { ...ec.selection.head },
+        } : null,
+      })),
     };
   }
-  
+
   setState(state) {
     this.lines = [...state.lines];
     this.cursor = { ...state.cursor };
@@ -647,6 +734,13 @@ class Buffer {
     } : null;
     this.scrollTop = state.scrollTop || 0;
     this.scrollLeft = state.scrollLeft || 0;
+    this.extraCursors = (state.extraCursors || []).map(ec => ({
+      cursor: { ...ec.cursor },
+      selection: ec.selection ? {
+        anchor: { ...ec.selection.anchor },
+        head: { ...ec.selection.head },
+      } : null,
+    }));
   }
 }
 

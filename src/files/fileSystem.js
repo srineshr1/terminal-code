@@ -69,6 +69,14 @@ async function readFileSafe(filePath) {
 }
 
 /**
+ * Read raw bytes for binary detection / preview decisions.
+ */
+async function readFileRaw(filePath) {
+  const resolved = resolveSafePath(filePath);
+  return await readFile(resolved);
+}
+
+/**
  * Write contents to a file.
  * @param {string} filePath - The path to the file (relative to baseDir or absolute).
  * @param {string} data - The string data to write.
@@ -176,6 +184,7 @@ module.exports = {
   readFile: readFileSafe,
   writeFile: writeFileSafe,
   readFileSafe,
+  readFileRaw,
   writeFileSafe,
   listDirSafe,
   statSafe,
