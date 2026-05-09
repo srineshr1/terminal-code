@@ -9,6 +9,7 @@ const blessed = require('blessed');
 const theme = require('./themes/default');
 const Syntax = require('../editor/Syntax');
 const SelectionUtil = require('../editor/Selection');
+const logger = require('../utils/logger');
 
 function rgb(arr) {
   if (!arr) return 'white';
@@ -69,7 +70,7 @@ class BlessedRenderer {
     this.screen.enableMouse();
     if (this.screen.program && typeof this.screen.program.setMouse === 'function') {
       try {
-        this.screen.program.setMouse({ cellMotion: true, sgrMouse: true }, true);
+        this.screen.program.setMouse({ allMotion: true, sgrMouse: true }, true);
       } catch (e) {}
     }
     this._initialized = true;
@@ -1656,6 +1657,22 @@ class BlessedRenderer {
     }
   }
 
+  _clampHitTest(event) {
+    const sidebarWidth = this.state.showExplorer ? 30 : 0;
+    const editorTop = 2;
+    const editorBottom = this.screen.height - 3;
+    const buffer = this.state.buffer;
+    if (!buffer || !buffer.lines) return null;
+    const gutterWidth = String(buffer.lines.length).length + 2;
+    const yClamped = Math.max(editorTop, Math.min(editorBottom - 1, event.y));
+    const xClamped = Math.max(sidebarWidth + gutterWidth, event.x);
+    let line = (yClamped - editorTop) + (buffer.scrollTop || 0);
+    line = Math.max(0, Math.min(buffer.lines.length - 1, line));
+    const lineLen = (buffer.lines[line] || '').length;
+    const col = Math.max(0, Math.min(lineLen, xClamped - sidebarWidth - gutterWidth));
+    return { line, col, inGutter: false };
+  }
+
   _editorHitTest(event) {
     const { x, y } = event;
     const sidebarWidth = this.state.showExplorer ? 30 : 0;
@@ -1676,8 +1693,15 @@ class BlessedRenderer {
   }
 
   _handleMouseEvent(event) {
+    logger.debug('mouse', `evt action=${event.action} button=${event.button} x=${event.x} y=${event.y} dragActive=${this._drag.active}`);
     if (event.action === 'mousedown' && event.button && event.button !== 'left') return;
-    const hit = this._editorHitTest(event);
+    let hit = this._editorHitTest(event);
+    logger.debug('mouse', `  primaryHit=${hit ? hit.line + ',' + hit.col : 'null'}`);
+    // For mousemove/mouseup during an active drag, allow out-of-bounds by clamping to nearest editor cell.
+    if (!hit && this._drag.active && (event.action === 'mousemove' || event.action === 'mousedrag' || event.action === 'mouseup' || event.action === 'drag')) {
+      hit = this._clampHitTest(event);
+      logger.debug('mouse', `  clamped=${hit ? hit.line + ',' + hit.col : 'null'}`);
+    }
     if (!hit) return;
 
     if (event.action === 'mousedown') {

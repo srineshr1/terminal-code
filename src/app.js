@@ -779,6 +779,7 @@ class App extends EventEmitter {
         break;
       case 'editor_drag_start':
         {
+          logger.debug('drag', `start data.line=${data.line} data.col=${data.col}`);
           const tab = this.tabs[this.activeTabIndex];
           if (tab && tab.buffer) {
             const b = tab.buffer;
@@ -794,6 +795,7 @@ class App extends EventEmitter {
         break;
       case 'editor_drag_move':
         {
+          logger.debug('drag', `move data.line=${data.line} data.col=${data.col} mode=${data.mode}`);
           const tab = this.tabs[this.activeTabIndex];
           if (tab && tab.buffer) {
             const b = tab.buffer;
@@ -804,6 +806,7 @@ class App extends EventEmitter {
             } else {
               b.extendSelectionTo(data.line, data.col);
             }
+            logger.debug('drag', `  after move sel=${JSON.stringify(b.selection)}`);
             this._ensureCursorVisible(b, this.renderer.getDimensions().height - 3);
             this._render();
           }
@@ -811,6 +814,7 @@ class App extends EventEmitter {
         break;
       case 'editor_drag_end':
         {
+          logger.debug('drag', `end data.line=${data.line} data.col=${data.col}`);
           const tab = this.tabs[this.activeTabIndex];
           if (tab && tab.buffer) {
             const b = tab.buffer;
@@ -818,6 +822,7 @@ class App extends EventEmitter {
             if (b.selection) {
               b.extendSelectionTo(data.line, data.col);
             }
+            logger.debug('drag', `  after end sel=${JSON.stringify(b.selection)}`);
             if (b.selection && b.selection.anchor.line === b.selection.head.line && b.selection.anchor.col === b.selection.head.col) {
               b.clearSelection();
             }
